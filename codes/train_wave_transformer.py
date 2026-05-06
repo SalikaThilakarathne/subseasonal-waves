@@ -15,15 +15,49 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from pathlib import Path
 
-# model definition
+# spatial CNN encorder
 
+class SpatialCNNEncoder(nn.Module):
+    """
+    encodes a lat–lon field at each timestep into a compact spatial embedding.
+    """
+
+    def __init__(self, out_dim: int):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.GELU(),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(16, out_dim, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_dim),
+            nn.GELU(),
+
+            # spatial averaging
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+
+    def forward(self, x):
+        """
+        x: (b, t, lat, lon)
+        returns: (b, t, out_dim)
+        """
+        b, t, h, w = x.shape
+        x = x.reshape(b * t, 1, h, w)  # use reshape instead of view to handle non-contiguous tensors (e.g. after slicing)
+        z = self.encoder(x)
+        return z.view(b, t, -1)
+
+# model definition
 
 class AtmosWaveTransformer(nn.Module):
     """
+    architecuture: CNN (space) + Transformer (time)
+    
     three-input version:
-        x1: (b, t, f1)  # mslp features
-        x2: (b, t, f2)  # u-component of wind
-        x3: (b, t, f3)  # v-component of wind
+        x1: (b, t, lat, lon)  # mslp features
+        x2: (b, t, lat, lon)  # u-component of wind
+        x3: (b, t, lat, lon)  # v-component of wind
 
     output:
         (b, output_dim)  # here: 4 [hs, t0, thq_sin, thq_cos]
@@ -31,46 +65,29 @@ class AtmosWaveTransformer(nn.Module):
 
     def __init__(
         self,
-        T: int,
-        F1: int,
-        F2: int,
-        F3: int,
         d_model: int = 128,
         nhead: int = 4,
         num_layers: int = 3,
         d_ff: int = 256,
         dropout: float = 0.3,
+        spatial_dim: int = 32,
         output_dim: int = 4,
     ):
         super().__init__()
 
-        # encoder for first input: mslp anomaly data
-        self.feature_encoder1 = nn.Sequential(
-            nn.Linear(F1, d_model),
+        # shared spatial encoder
+        self.spatial_encoder = SpatialCNNEncoder(out_dim=spatial_dim)
+
+        # projection to transformer dimension
+        self.input_proj = nn.Sequential(
+            nn.Linear(3 * spatial_dim, d_model),
             nn.GELU(),
             nn.LayerNorm(d_model),
         )
 
-        # encoder for second input: wind u10 component
-        self.feature_encoder2 = nn.Sequential(
-            nn.Linear(F2, d_model),
-            nn.GELU(),
-            nn.LayerNorm(d_model),
-        )
-
-        # encoder for third input: wind v10 component
-        self.feature_encoder3 = nn.Sequential(
-            nn.Linear(F3, d_model),
-            nn.GELU(),
-            nn.LayerNorm(d_model),
-        )
-
-        # positional embeddings for concatenated features
-        self.pos = nn.Parameter(torch.randn(1, T, d_model * 3) * 0.02)
-
-        # transformer encoder
+        # temporal transformer
         enc_layer = nn.TransformerEncoderLayer(
-            d_model=d_model * 3,
+            d_model=d_model,
             nhead=nhead,
             dim_feedforward=d_ff,
             dropout=dropout,
@@ -78,37 +95,33 @@ class AtmosWaveTransformer(nn.Module):
             activation="gelu",
             norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
+        self.transformer = nn.TransformerEncoder(
+            enc_layer, num_layers=num_layers
+        )
 
         # prediction head
         self.head = nn.Sequential(
-            nn.LayerNorm(d_model * 3),
-            nn.Linear(d_model * 3, 128),
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, 128),
             nn.GELU(),
             nn.Linear(128, output_dim),
         )
 
-    def forward(self, x1, x2, x3):
-        # encode each input
-        z1 = self.feature_encoder1(x1)
-        z2 = self.feature_encoder2(x2)
-        z3 = self.feature_encoder3(x3)
+    def forward(self, X_mslp, X_windU, X_windV):
+        z_mslp  = self.spatial_encoder(X_mslp)
+        z_windU = self.spatial_encoder(X_windU)
+        z_windV = self.spatial_encoder(X_windV)
 
-        # concatenate along feature dimension
-        z = torch.cat((z1, z2, z3), dim=2)
+        z = torch.cat([z_mslp, z_windU, z_windV], dim=-1)
+        z = self.input_proj(z)
 
-        # add positional embeddings
-        z = z + self.pos
-
-        # transformer encoder
         z = self.transformer(z)
 
         # mean pooling over time
         z = z.mean(dim=1)
-
-        # prediction head
         return self.head(z)
 
+#hyperparameter loader
 def load_hyperparams(path):
     hp = {}
     if not os.path.isfile(path):
@@ -144,10 +157,10 @@ def train_and_save_model(
     trains the transformer model and saves a checkpoint that can be reloaded later.
 
     expected shapes:
-        X_mslp:  (N, T, F1)
-        X_windU: (N, T, F2)
-        X_windV: (N, T, F3)
-        y:       (N, 4)      # [hs, t0, thq_sin, thq_cos]
+        X_mslp:  (n, t, lat, lon)
+        X_windU: (n, t, lat, lon)
+        X_windV: (n, t, lat, lon)
+        y:       (n, 4)      # [hs, t0, thq_sin, thq_cos]
     """
 
     os.makedirs(models_dir, exist_ok=True)
@@ -161,16 +174,16 @@ def train_and_save_model(
     print(f"using device: {device}")
 
     # infer sequence length and feature dimensions from tensors
-    N, T, F1 = X_mslp.shape
-    _, T_u, F2 = X_windU.shape
-    _, T_v, F3 = X_windV.shape
+    N, T, lat, lon = X_mslp.shape
+    _, T_u, _, _ = X_windU.shape
+    _, T_v, _, _ = X_windV.shape
 
     # simple consistency checks
     assert T == T_u == T_v, "sequence length mismatch between inputs"
     assert N == X_windU.shape[0] == X_windV.shape[0] == y.shape[0], "sample count mismatch"
 
     print(f"inferred sequence length T = {T}")
-    print(f"inferred feature dims: F1 (mslp) = {F1}, F2 (u) = {F2}, F3 (v) = {F3}")
+    print(f"inferred feature count N = {N}")
 
     # sequential split to avoid leakage
     ratio = 0.7894620698765736  # ratio chosen so that the split occurs exactly at 2007/2008, free to use 0.8.
@@ -232,13 +245,14 @@ def train_and_save_model(
     hp = load_hyperparams(hp_path)
 
     # unpack into variables (all keys must be present in the file)
+    d_model = hp["d_model"]
+    nhead = hp["nhead"]
+    num_layers = hp["num_layers"]
+    d_ff = hp["d_ff"]
+    dropout = hp["dropout"]
+    spatial_dim = hp["spatial_dim"]
     l_rate = hp["l_rate"]
     weight_decay = hp["weight_decay"]
-    dropout = hp["dropout"]
-    num_layers = hp["num_layers"]
-    d_model = hp["d_model"]
-    d_ff = hp["d_ff"]
-    nhead = hp["nhead"]
     max_epochs = hp["max_epochs"]
     patience = hp["patience"]
     patience_limit = hp["patience_limit"]
@@ -250,6 +264,7 @@ def train_and_save_model(
     print(f"  num_layers     = {num_layers}")
     print(f"  d_ff           = {d_ff}")
     print(f"  dropout        = {dropout}")
+    print(f"  spatial_dim    = {spatial_dim}")
     print(f"  l_rate         = {l_rate}")
     print(f"  weight_decay   = {weight_decay}")
     print(f"  max_epochs     = {max_epochs}")
@@ -258,15 +273,12 @@ def train_and_save_model(
 
     # model, loss, optimiser, scheduler
     model = AtmosWaveTransformer(
-        T=T,
-        F1=F1,
-        F2=F2,
-        F3=F3,
         d_model=d_model,
         nhead=nhead,
         num_layers=num_layers,
         d_ff=d_ff,
         dropout=dropout,
+        spatial_dim=spatial_dim,
         output_dim=y.shape[1],
     ).to(device)
 
@@ -361,21 +373,18 @@ def train_and_save_model(
 
     # prepare checkpoint for saving
     today = datetime.today().strftime("%Y_%m_%d")
-    ckpt_path = os.path.join(models_dir, f"{today}_mslp_wind_transformer.pt")
+    ckpt_path = os.path.join(models_dir, f"{today}_mslp_wind_transformer_4d.pt")
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
         "model_class": "AtmosWaveTransformer",
         "hyperparams": {
-            "T": T,
-            "F1": F1,
-            "F2": F2,
-            "F3": F3,
             "d_model": d_model,
             "nhead": nhead,
             "num_layers": num_layers,
             "d_ff": d_ff,
             "dropout": dropout,
+            "spatial_dim": spatial_dim,
             "output_dim": y.shape[1],
         },
         "normalisation": {
@@ -398,7 +407,7 @@ if __name__ == "__main__":
     - saves a checkpoint to ../models
     """
     # path to the prepared tensors saved earlier
-    tensor_ckpt_path = Path("../data/prepared_tensors/wave_mslp_wind_tensors.pt")
+    tensor_ckpt_path = Path("../data/prepared_tensors/wave_mslp_wind_tensors_4d.pt")
 
     if not tensor_ckpt_path.is_file():
         raise FileNotFoundError(

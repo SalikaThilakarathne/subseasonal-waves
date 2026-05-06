@@ -20,7 +20,7 @@ def load_model_checkpoint(ckpt_path: str, device: str = None):
         model  : pytorch module in eval mode
         y_mean : tensor of shape (1, output_dim)
         y_std  : tensor of shape (1, output_dim)
-        h      : dict of hyperparameters (including T, F1, F2, F3)
+        h      : dict of hyperparameters
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -30,15 +30,12 @@ def load_model_checkpoint(ckpt_path: str, device: str = None):
 
     h = checkpoint["hyperparams"]
     model = AtmosWaveTransformer(
-        T=h["T"],
-        F1=h["F1"],
-        F2=h["F2"],
-        F3=h["F3"],
         d_model=h["d_model"],
         nhead=h["nhead"],
         num_layers=h["num_layers"],
         d_ff=h["d_ff"],
         dropout=h["dropout"],
+        spatial_dim=h["spatial_dim"],   # new-cnn output dimension
         output_dim=h["output_dim"],
     ).to(device)
 
@@ -64,9 +61,9 @@ def predict_wave(
     run the model on input tensors and return unnormalised predictions.
 
     inputs:
-        X_mslp_in  : (N, T, F1) torch.float32
-        X_windU_in : (N, T, F2) torch.float32
-        X_windV_in : (N, T, F3) torch.float32
+        X_mslp_in  : (N, T, lat, lon) torch.float32
+        X_windU_in : (N, T, lat, lon) torch.float32
+        X_windV_in : (N, T, lat, lon) torch.float32
 
     output:
         preds_ph : (N, 4) tensor in physical units [hs, t0, thq_sin, thq_cos]
@@ -91,9 +88,9 @@ def predict_wave(
 if __name__ == "__main__":
     """
     direct execution:
-    - loads the latest transformer checkpoint
+    - loads the latest CNN + transformer checkpoint
     - loads pre-built tensors from disk
-    - selects the test dataset (last 20 percent)
+    - selects the test dataset (last split)
     - runs predictions on the test set
     """
 
@@ -102,13 +99,13 @@ if __name__ == "__main__":
 
     # directory paths
     models_dir = Path("../models")
-    tensor_ckpt_path = Path("../data/prepared_tensors/wave_mslp_wind_tensors.pt")
+    tensor_ckpt_path = Path("../data/prepared_tensors/wave_mslp_wind_tensors_4d.pt")
 
     # find latest model checkpoint
-    ckpts = sorted(models_dir.glob("*_mslp_wind_transformer.pt"))
+    ckpts = sorted(models_dir.glob("*_mslp_wind_transformer_4d.pt"))
     if not ckpts:
         raise FileNotFoundError("no transformer checkpoints found in ../models.")
-    ckpt_path = ckpts[-1]
+    ckpt_path = ckpts[-1]  # to get the latest model run. change this if you prefer to hand pick the model.
     print(f"loading checkpoint: {ckpt_path}")
 
     # load model and normalisation stats

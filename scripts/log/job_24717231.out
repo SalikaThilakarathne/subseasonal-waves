@@ -1,0 +1,105 @@
+loading tensors from: /work/gg0303/g260244/metascales/wave-forecasts/codes/../data/prepared_tensors/wave_mslp_wind_tensors_4d.pt
+tensor shapes:
+  X_mslp : torch.Size([666141, 6, 40, 60])
+  X_windU: torch.Size([666141, 6, 20, 20])
+  X_windV: torch.Size([666141, 6, 20, 20])
+  y      : torch.Size([666141, 4])
+loaded 25 hyperparameter configurations from /work/gg0303/g260244/metascales/wave-forecasts/codes/../config/transformer_grid.txt
+using device: cuda
+
+------------------------------------------------------------
+configuration 1/25:
+{'d_model': 64, 'nhead': 4, 'num_layers': 2, 'd_ff': 128, 'dropout': 0.1, 'spatial_dim': 16, 'l_rate': 0.0005, 'weight_decay': 0.0001, 'max_epochs': 60, 'patience': 5}
+test period begins at: 2008-01-01 01:00:00
+test period ends   at: 2023-12-31 23:00:00
+epoch 001 | train 0.1082 | val 0.0856
+epoch 002 | train 0.0827 | val 0.0900
+epoch 003 | train 0.0763 | val 0.0806
+epoch 004 | train 0.0724 | val 0.0854
+epoch 005 | train 0.0700 | val 0.0750
+epoch 006 | train 0.0677 | val 0.0762
+epoch 007 | train 0.0655 | val 0.0905
+epoch 008 | train 0.0650 | val 0.0857
+epoch 009 | train 0.0633 | val 0.0947
+epoch 010 | train 0.0611 | val 0.0778
+early stopping triggered.
+finished config 1/25 | best val loss = 0.075030 at epoch 5
+
+------------------------------------------------------------
+configuration 2/25:
+{'d_model': 64, 'nhead': 4, 'num_layers': 3, 'd_ff': 256, 'dropout': 0.2, 'spatial_dim': 16, 'l_rate': 0.001, 'weight_decay': 0.0001, 'max_epochs': 60, 'patience': 5}
+test period begins at: 2008-01-01 01:00:00
+test period ends   at: 2023-12-31 23:00:00
+epoch 001 | train 0.1022 | val 0.0901
+epoch 002 | train 0.0819 | val 0.0919
+epoch 003 | train 0.0766 | val 0.0848
+epoch 004 | train 0.0729 | val 0.0826
+epoch 005 | train 0.0708 | val 0.0950
+epoch 006 | train 0.0685 | val 0.0978
+epoch 007 | train 0.0675 | val 0.0837
+epoch 008 | train 0.0652 | val 0.0918
+early stopping triggered.
+finished config 2/25 | best val loss = 0.084797 at epoch 3
+
+------------------------------------------------------------
+configuration 3/25:
+{'d_model': 64, 'nhead': 8, 'num_layers': 3, 'd_ff': 256, 'dropout': 0.1, 'spatial_dim': 16, 'l_rate': 0.0005, 'weight_decay': 0.001, 'max_epochs': 100, 'patience': 5}
+test period begins at: 2008-01-01 01:00:00
+test period ends   at: 2023-12-31 23:00:00
+epoch 001 | train 0.1013 | val 0.0888
+epoch 002 | train 0.0812 | val 0.0848
+epoch 003 | train 0.0754 | val 0.0887
+epoch 004 | train 0.0712 | val 0.0837
+epoch 005 | train 0.0692 | val 0.0859
+epoch 006 | train 0.0666 | val 0.0865
+epoch 007 | train 0.0651 | val 0.0899
+epoch 008 | train 0.0632 | val 0.0838
+epoch 009 | train 0.0614 | val 0.0781
+epoch 010 | train 0.0596 | val 0.0778
+epoch 011 | train 0.0585 | val 0.0829
+epoch 012 | train 0.0567 | val 0.0725
+epoch 013 | train 0.0546 | val 0.0790
+epoch 014 | train 0.0541 | val 0.0873
+epoch 015 | train 0.0518 | val 0.0773
+epoch 016 | train 0.0502 | val 0.0755
+epoch 017 | train 0.0496 | val 0.0728
+early stopping triggered.
+finished config 3/25 | best val loss = 0.072476 at epoch 12
+
+------------------------------------------------------------
+configuration 4/25:
+{'d_model': 64, 'nhead': 12, 'num_layers': 3, 'd_ff': 256, 'dropout': 0.2, 'spatial_dim': 16, 'l_rate': 0.001, 'weight_decay': 0.001, 'max_epochs': 80, 'patience': 10}
+test period begins at: 2008-01-01 01:00:00
+test period ends   at: 2023-12-31 23:00:00
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 24717231
+* JobName          : pytorch-wave                                      
+* Account          : gg0303_gpu
+* User             : g260244 (202018), gg0303 (1190)                   
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l40360 (1)                                                
+* Submit date      : 2026-05-06T12:47:02
+* Start time       : 2026-05-06T12:47:35
+* End time         : 2026-05-06T13:30:04
+* Elapsed time     : 00:42:29 (Timelimit=12:00:00)                     
+* Command          : /work/gg0303/g260244/metascales/wave-forecasts/scripts/
+*                    grid_search_transformer.sh
+* WorkDir          : /work/gg0303/g260244/metascales/wave-forecasts/scripts
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch             0.18
+* extern | extern            0.18                 856K (0)
+* ------------------------------------------------------------------------------
+

@@ -15,4 +15,5 @@ Describe how to run your code here.
 
 ## Notes
 - `data/` is ignored and are provided locally.
+- embed_dim must be divisible by num_heads: so your d_model should be divisable by nhead. otherwise grid search would result in an error. check the /config/transformer_grid.txt
 ``

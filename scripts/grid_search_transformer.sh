@@ -2,7 +2,7 @@
 
 #################################################################
 # batch settings for job on levante at DKRZ, metascales model run
-# Mar, 2026
+# May, 2026
 #################################################################
 #SBATCH --job-name=pytorch-wave         # Job name
 #SBATCH --partition=gpu       # Partition name
