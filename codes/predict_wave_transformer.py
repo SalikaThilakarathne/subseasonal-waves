@@ -7,6 +7,7 @@
 
 import torch
 import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
 from pathlib import Path
 
 from train_wave_transformer import AtmosWaveTransformer
@@ -22,7 +23,7 @@ def load_model_checkpoint(ckpt_path: str, device: str = None):
         y_std  : tensor of shape (1, output_dim)
         h      : dict of hyperparameters
     """
-    if device is None:
+    if device is None:  #in helper functions...
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # safe here because we only load checkpoints we generated ourselves
@@ -36,6 +37,7 @@ def load_model_checkpoint(ckpt_path: str, device: str = None):
         d_ff=h["d_ff"],
         dropout=h["dropout"],
         spatial_dim=h["spatial_dim"],   # new-cnn output dimension
+        base_channels=h["base_channels"],
         output_dim=h["output_dim"],
     ).to(device)
 
@@ -152,15 +154,32 @@ if __name__ == "__main__":
     print(f"test period begins at: {test_dates[0]}")
     print(f"test period ends   at: {test_dates[-1]}")
 
-    # run predictions on the test set
-    preds_ph = predict_wave(
-        model=model,
-        y_mean=y_mean,
-        y_std=y_std,
-        X_mslp_in=X_mslp_test,
-        X_windU_in=X_windU_test,
-        X_windV_in=X_windV_test,
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device)
+    batch_size = 512
+
+    dl_test = DataLoader(
+        TensorDataset(X_mslp_test, X_windU_test, X_windV_test),
+        batch_size=batch_size,
+        shuffle=False,
     )
+
+    model.eval()
+    preds = []
+    
+    with torch.no_grad():
+        for xb_mslp, xb_u, xb_v in dl_test:
+            xb_mslp = xb_mslp.to(device)
+            xb_u = xb_u.to(device)
+            xb_v = xb_v.to(device)
+    
+            preds_norm = model(xb_mslp, xb_u, xb_v)
+            preds_ph_batch = preds_norm * y_std + y_mean
+    
+            preds.append(preds_ph_batch.cpu())
+    
+    # concatenate all batches
+    preds_ph = torch.cat(preds, dim=0)
 
     # convert predictions and dates to a dataframe for later analysis
     pred_np = preds_ph.cpu().numpy()

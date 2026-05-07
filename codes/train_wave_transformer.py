@@ -22,15 +22,15 @@ class SpatialCNNEncoder(nn.Module):
     encodes a lat–lon field at each timestep into a compact spatial embedding.
     """
 
-    def __init__(self, out_dim: int):
+    def __init__(self, out_dim: int, base_channels=16):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
+            nn.Conv2d(1, base_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(base_channels),
             nn.GELU(),
             nn.MaxPool2d(2),
 
-            nn.Conv2d(16, out_dim, kernel_size=3, padding=1),
+            nn.Conv2d(base_channels, out_dim, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_dim),
             nn.GELU(),
 
@@ -71,12 +71,14 @@ class AtmosWaveTransformer(nn.Module):
         d_ff: int = 256,
         dropout: float = 0.3,
         spatial_dim: int = 32,
+        head_dim: int = 128,
+        base_channels: int = 16,
         output_dim: int = 4,
     ):
         super().__init__()
 
         # shared spatial encoder
-        self.spatial_encoder = SpatialCNNEncoder(out_dim=spatial_dim)
+        self.spatial_encoder = SpatialCNNEncoder(out_dim=spatial_dim, base_channels = base_channels)
 
         # projection to transformer dimension
         self.input_proj = nn.Sequential(
@@ -102,9 +104,9 @@ class AtmosWaveTransformer(nn.Module):
         # prediction head
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Linear(d_model, 128),
+            nn.Linear(d_model, head_dim),
             nn.GELU(),
-            nn.Linear(128, output_dim),
+            nn.Linear(head_dim, output_dim),
         )
 
     def forward(self, X_mslp, X_windU, X_windV):
@@ -251,6 +253,8 @@ def train_and_save_model(
     d_ff = hp["d_ff"]
     dropout = hp["dropout"]
     spatial_dim = hp["spatial_dim"]
+    head_dim = hp["head_dim"]
+    base_channels = hp["base_channels"]
     l_rate = hp["l_rate"]
     weight_decay = hp["weight_decay"]
     max_epochs = hp["max_epochs"]
@@ -265,6 +269,8 @@ def train_and_save_model(
     print(f"  d_ff           = {d_ff}")
     print(f"  dropout        = {dropout}")
     print(f"  spatial_dim    = {spatial_dim}")
+    print(f"  head_dim       = {head_dim}")
+    print(f"  base_channels  = {base_channels}")
     print(f"  l_rate         = {l_rate}")
     print(f"  weight_decay   = {weight_decay}")
     print(f"  max_epochs     = {max_epochs}")
@@ -279,6 +285,8 @@ def train_and_save_model(
         d_ff=d_ff,
         dropout=dropout,
         spatial_dim=spatial_dim,
+        head_dim=head_dim,
+        base_channels=base_channels,
         output_dim=y.shape[1],
     ).to(device)
 
@@ -385,6 +393,8 @@ def train_and_save_model(
             "d_ff": d_ff,
             "dropout": dropout,
             "spatial_dim": spatial_dim,
+            "head_dim": head_dim,
+            "base_channels": base_channels,
             "output_dim": y.shape[1],
         },
         "normalisation": {

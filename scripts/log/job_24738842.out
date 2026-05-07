@@ -1,0 +1,32 @@
+loading tensors from: /work/gg0303/g260244/metascales/wave-forecasts/codes/../data/prepared_tensors/wave_mslp_wind_tensors_4d.pt
+tensor shapes:
+  X_mslp : torch.Size([666141, 6, 40, 60])
+  X_windU: torch.Size([666141, 6, 20, 20])
+  X_windV: torch.Size([666141, 6, 20, 20])
+  y      : torch.Size([666141, 4])
+loaded 19 hyperparameter configurations from /work/gg0303/g260244/metascales/wave-forecasts/codes/../config/transformer_grid.txt
+using device: cuda
+
+------------------------------------------------------------
+configuration 1/19:
+{'d_model': 64, 'nhead': 4, 'num_layers': 2, 'd_ff': 128, 'dropout': 0.1, 'spatial_dim': 16, 'head_dim': 64, 'base_channels': 8, 'l_rate': 0.0005, 'weight_decay': 0.0001, 'max_epochs': 60, 'patience': 5}
+test period begins at: 2008-01-01 01:00:00
+test period ends   at: 2023-12-31 23:00:00
+epoch 001 | train 0.1070 | val 0.0949
+epoch 002 | train 0.0824 | val 0.0776
+epoch 003 | train 0.0767 | val 0.0813
+epoch 004 | train 0.0733 | val 0.0840
+epoch 005 | train 0.0708 | val 0.0822
+epoch 006 | train 0.0685 | val 0.0792
+epoch 007 | train 0.0669 | val 0.0776
+early stopping triggered.
+finished config 1/19 | best val loss = 0.077559 at epoch 2
+
+------------------------------------------------------------
+configuration 2/19:
+{'d_model': 64, 'nhead': 4, 'num_layers': 3, 'd_ff': 256, 'dropout': 0.2, 'spatial_dim': 16, 'head_dim': 64, 'base_channels': 16, 'l_rate': 0.001, 'weight_decay': 0.0001, 'max_epochs': 60, 'patience': 5}
+test period begins at: 2008-01-01 01:00:00
+test period ends   at: 2023-12-31 23:00:00
+epoch 001 | train 0.1022 | val 0.0903
+epoch 002 | train 0.0819 | val 0.0921
+epoch 003 | train 0.0766 | val 0.0845

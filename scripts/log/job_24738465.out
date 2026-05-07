@@ -1,0 +1,32 @@
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 24738465
+* JobName          : pytorch-wave                                      
+* Account          : gg0303_gpu
+* User             : g260244 (202018), gg0303 (1190)                   
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l40363 (1)                                                
+* Submit date      : 2026-05-07T12:56:30
+* Start time       : 2026-05-07T12:58:08
+* End time         : 2026-05-07T12:58:22
+* Elapsed time     : 00:00:14 (Timelimit=12:00:00)                     
+* Command          : /work/gg0303/g260244/metascales/wave-forecasts/scripts/
+*                    grid_search_transformer.sh
+* WorkDir          : /work/gg0303/g260244/metascales/wave-forecasts/scripts
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch          0.00097
+* extern | extern         0.00097                3876K (0)
+* ------------------------------------------------------------------------------
+

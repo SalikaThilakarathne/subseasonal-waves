@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/work/gg0303/g260244/metascales/wave-forecasts/codes/grid_search_transformer.py", line 18, in <module>
+    from train_wave_transformer import AtmosWaveTransformer
+  File "/work/gg0303/g260244/metascales/wave-forecasts/codes/train_wave_transformer.py", line 81
+    self.spatial_encoder = SpatialCNNEncoder(out_dim=spatial_dim, base_channels)
+                                                                               ^
+SyntaxError: positional argument follows keyword argument

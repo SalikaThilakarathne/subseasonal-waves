@@ -74,6 +74,8 @@ def load_grid(grid_file: Path):
                 "d_ff": int(row["d_ff"]),
                 "dropout": float(row["dropout"]),
                 "spatial_dim": int(row["spatial_dim"]),   #after the inclusion of CNN layer...
+                "head_dim": int(row["head_dim"]),
+                "base_channels": int(row["base_channels"]),
                 "l_rate": float(row["l_rate"]),
                 "weight_decay": float(row["weight_decay"]),
                 "max_epochs": int(row["max_epochs"]),
@@ -158,6 +160,8 @@ def run_single_config(
     d_ff = config["d_ff"]
     dropout = config["dropout"]
     spatial_dim = config["spatial_dim"]
+    head_dim = config["head_dim"]
+    base_channels = config["base_channels"]
     l_rate = config["l_rate"]
     weight_decay = config["weight_decay"]
     max_epochs = config["max_epochs"]
@@ -172,6 +176,7 @@ def run_single_config(
         d_ff=d_ff,
         dropout=dropout,
         spatial_dim=spatial_dim,   # after the addition of cnn layer
+        base_channels=base_channels,
         output_dim=y.shape[1],
     ).to(device)
 
@@ -258,7 +263,6 @@ def run_single_config(
 
     return best_val_loss, best_epoch
 
-
 def main():
     """
     run grid search over hyperparameters and save results to a text file.
@@ -284,7 +288,7 @@ def main():
     with results_file.open("w") as f:
         # write header
         f.write(
-            "d_model,nhead,num_layers,d_ff,dropout,spatial_dim,l_rate,weight_decay,"
+            "d_model,nhead,num_layers,d_ff,dropout,spatial_dim,head_dim,base_channels,l_rate,weight_decay,"
             "max_epochs,patience,best_val_loss,best_epoch\n"
         )
 
@@ -307,7 +311,7 @@ def main():
             # write one line to results file
             f.write(
                 f"{cfg['d_model']},{cfg['nhead']},{cfg['num_layers']},"
-                f"{cfg['d_ff']},{cfg['dropout']},{cfg['spatial_dim']},{cfg['l_rate']},"
+                f"{cfg['d_ff']},{cfg['dropout']},{cfg['spatial_dim']},{cfg['head_dim']},{cfg['base_channels']},{cfg['l_rate']},"
                 f"{cfg['weight_decay']},{cfg['max_epochs']},{cfg['patience']},"
                 f"{best_val_loss:.6f},{best_epoch}\n"
             )
