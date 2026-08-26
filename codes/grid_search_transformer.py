@@ -10,7 +10,6 @@ import csv
 from pathlib import Path
 
 import numpy as np
-from datetime import datetime
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
@@ -73,9 +72,6 @@ def load_grid(grid_file: Path):
                 "num_layers": int(row["num_layers"]),
                 "d_ff": int(row["d_ff"]),
                 "dropout": float(row["dropout"]),
-                "spatial_dim": int(row["spatial_dim"]),   #after the inclusion of CNN layer...
-                "head_dim": int(row["head_dim"]),
-                "base_channels": int(row["base_channels"]),
                 "l_rate": float(row["l_rate"]),
                 "weight_decay": float(row["weight_decay"]),
                 "max_epochs": int(row["max_epochs"]),
@@ -111,10 +107,10 @@ def run_single_config(
     torch.cuda.manual_seed_all(42)
     np.random.seed(42)
 
-    # infer sequence length and feature dimensions from tensors 
-    N, T, lat, lon = X_mslp.shape
-    _, T_u, _, _ = X_windU.shape
-    _, T_v, _, _ = X_windV.shape
+    # infer sequence length and feature dimensions from tensors
+    N, T, F1 = X_mslp.shape
+    _, T_u, F2 = X_windU.shape
+    _, T_v, F3 = X_windV.shape
 
     assert T == T_u == T_v, "sequence length mismatch between inputs"
     assert N == X_windU.shape[0] == X_windV.shape[0] == y.shape[0], "sample count mismatch"
@@ -159,9 +155,6 @@ def run_single_config(
     num_layers = config["num_layers"]
     d_ff = config["d_ff"]
     dropout = config["dropout"]
-    spatial_dim = config["spatial_dim"]
-    head_dim = config["head_dim"]
-    base_channels = config["base_channels"]
     l_rate = config["l_rate"]
     weight_decay = config["weight_decay"]
     max_epochs = config["max_epochs"]
@@ -170,13 +163,15 @@ def run_single_config(
 
     # model, loss, optimiser, scheduler
     model = AtmosWaveTransformer(
+        T=T,
+        F1=F1,
+        F2=F2,
+        F3=F3,
         d_model=d_model,
         nhead=nhead,
         num_layers=num_layers,
         d_ff=d_ff,
         dropout=dropout,
-        spatial_dim=spatial_dim,   # after the addition of cnn layer
-        base_channels=base_channels,
         output_dim=y.shape[1],
     ).to(device)
 
@@ -263,16 +258,16 @@ def run_single_config(
 
     return best_val_loss, best_epoch
 
+
 def main():
     """
     run grid search over hyperparameters and save results to a text file.
     """
-    today = datetime.today().strftime("%Y_%m_%d")
     base_dir = Path(__file__).resolve().parent
 
-    tensor_ckpt_path = base_dir / "../data/prepared_tensors/wave_mslp_wind_tensors_4d.pt"
+    tensor_ckpt_path = base_dir / "../data/prepared_tensors/wave_mslp_wind_tensors.pt"
     grid_file = base_dir / "../config/transformer_grid.txt"
-    results_file = base_dir / f"../results/{today}_transformer_grid_search_results.txt"
+    results_file = base_dir / "../results/transformer_grid_search_results.txt"
 
     # ensure output directory exists
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -288,7 +283,7 @@ def main():
     with results_file.open("w") as f:
         # write header
         f.write(
-            "d_model,nhead,num_layers,d_ff,dropout,spatial_dim,head_dim,base_channels,l_rate,weight_decay,"
+            "d_model,nhead,num_layers,d_ff,dropout,l_rate,weight_decay,"
             "max_epochs,patience,best_val_loss,best_epoch\n"
         )
 
@@ -311,7 +306,7 @@ def main():
             # write one line to results file
             f.write(
                 f"{cfg['d_model']},{cfg['nhead']},{cfg['num_layers']},"
-                f"{cfg['d_ff']},{cfg['dropout']},{cfg['spatial_dim']},{cfg['head_dim']},{cfg['base_channels']},{cfg['l_rate']},"
+                f"{cfg['d_ff']},{cfg['dropout']},{cfg['l_rate']},"
                 f"{cfg['weight_decay']},{cfg['max_epochs']},{cfg['patience']},"
                 f"{best_val_loss:.6f},{best_epoch}\n"
             )

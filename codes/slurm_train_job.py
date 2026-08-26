@@ -41,7 +41,8 @@ def load_tensors(tensor_ckpt_path: Path):
 def main():
     base = Path(__file__).resolve().parent
 
-    tensor_file = base / "../data/prepared_tensors/wave_mslp_wind_tensors.pt"
+    poi = 'SEE'
+    tensor_file = base / f"../data/prepared_tensors/wave_mslp_wind_tensors_sl{poi}.pt"
     model_dir   = base / "../models"
 
     # load tensors
@@ -56,6 +57,7 @@ def main():
         y=y,
         y_dates=y_dates,
         models_dir=str(model_dir),
+        poi=poi,
     )
 
 

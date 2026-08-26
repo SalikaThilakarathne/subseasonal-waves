@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# preprocess mslp and 10 m wind (u, v) for metascales work
+# preprocess wave, mslp and 10 m wind (u, v) for metascales work
 # Salika Thilakarathne
 # Helmholtz-Zentrum Hereon
 # March, 2026

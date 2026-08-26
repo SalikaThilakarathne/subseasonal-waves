@@ -51,6 +51,8 @@ def scientific_graphs():
     """
     # Reset to default settings
     plt.rcdefaults()
+    # Apply a scientific style
+    plt.style.use(['science', 'no-latex', 'nature'])
     # Update global parameters
     plt.rcParams.update({
         'font.size': 9,               # Default font size
@@ -62,10 +64,10 @@ def scientific_graphs():
         'figure.autolayout': True,        # Enable tight layout by default
         # 'figure.dpi': 300,                # Default DPI for figures shown
         # 'savefig.dpi': 300,               # Default DPI for saved figures
-
+        'figure.facecolor': 'none',   # background of the whole figure -- for slides with this #FAFAFA
+        'axes.facecolor': 'none',     # background inside each axis
     })
-    # Apply a scientific style
-    plt.style.use(['science', 'no-latex', 'nature'])
+    
 # Call the function to apply the defaults
 scientific_graphs()
 

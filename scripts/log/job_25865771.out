@@ -1,0 +1,163 @@
+loading tensors from: /work/gg0303/g260244/metascales/wave-forecasts/codes/../data/prepared_tensors/wave_mslp_wind_tensors.pt
+tensor shapes:
+  X_mslp : torch.Size([666210, 6, 2400])
+  X_windU: torch.Size([666210, 6, 400])
+  X_windV: torch.Size([666210, 6, 400])
+  y      : torch.Size([666210, 4])
+using device: cuda
+inferred sequence length T = 6
+inferred feature dims: F1 (mslp) = 2400, F2 (u) = 400, F3 (v) = 400
+test period begins at: 2007-12-31 17:00:00
+test period ends   at: 2023-12-31 23:00:00
+
+hyperparameters loaded from transformer_hyperparams.txt:
+  d_model        = 64
+  nhead          = 8
+  num_layers     = 2
+  d_ff           = 256
+  dropout        = 0.1
+  l_rate         = 0.001
+  weight_decay   = 0.001
+  max_epochs     = 500
+  patience       = 100
+  patience_limit = 0.005
+epoch 001 | train 0.0912 | val 0.0694
+epoch 002 | train 0.0604 | val 0.0568
+epoch 003 | train 0.0525 | val 0.0540
+epoch 004 | train 0.0484 | val 0.0539
+epoch 005 | train 0.0452 | val 0.0513
+epoch 006 | train 0.0409 | val 0.0518
+epoch 007 | train 0.0378 | val 0.0523
+epoch 008 | train 0.0357 | val 0.0534
+epoch 009 | train 0.0330 | val 0.0571
+epoch 010 | train 0.0308 | val 0.0547
+epoch 011 | train 0.0284 | val 0.0541
+epoch 012 | train 0.0265 | val 0.0560
+epoch 013 | train 0.0254 | val 0.0560
+epoch 014 | train 0.0245 | val 0.0548
+epoch 015 | train 0.0236 | val 0.0587
+epoch 016 | train 0.0221 | val 0.0549
+epoch 017 | train 0.0218 | val 0.0565
+epoch 018 | train 0.0211 | val 0.0599
+epoch 019 | train 0.0211 | val 0.0565
+epoch 020 | train 0.0205 | val 0.0565
+epoch 021 | train 0.0198 | val 0.0576
+epoch 022 | train 0.0199 | val 0.0592
+epoch 023 | train 0.0203 | val 0.0583
+epoch 024 | train 0.0193 | val 0.0583
+epoch 025 | train 0.0195 | val 0.0602
+epoch 026 | train 0.0188 | val 0.0597
+epoch 027 | train 0.0185 | val 0.0601
+epoch 028 | train 0.0183 | val 0.0625
+epoch 029 | train 0.0180 | val 0.0574
+epoch 030 | train 0.0183 | val 0.0623
+epoch 031 | train 0.0176 | val 0.0572
+epoch 032 | train 0.0173 | val 0.0596
+epoch 033 | train 0.0172 | val 0.0608
+epoch 034 | train 0.0169 | val 0.0567
+epoch 035 | train 0.0169 | val 0.0567
+epoch 036 | train 0.0165 | val 0.0574
+epoch 037 | train 0.0164 | val 0.0561
+epoch 038 | train 0.0160 | val 0.0563
+epoch 039 | train 0.0164 | val 0.0567
+epoch 040 | train 0.0160 | val 0.0618
+epoch 041 | train 0.0150 | val 0.0590
+epoch 042 | train 0.0149 | val 0.0585
+epoch 043 | train 0.0153 | val 0.0577
+epoch 044 | train 0.0154 | val 0.0576
+epoch 045 | train 0.0145 | val 0.0591
+epoch 046 | train 0.0151 | val 0.0552
+epoch 047 | train 0.0143 | val 0.0573
+epoch 048 | train 0.0148 | val 0.0560
+epoch 049 | train 0.0145 | val 0.0591
+epoch 050 | train 0.0147 | val 0.0564
+epoch 051 | train 0.0144 | val 0.0565
+epoch 052 | train 0.0138 | val 0.0570
+epoch 053 | train 0.0145 | val 0.0560
+epoch 054 | train 0.0138 | val 0.0552
+epoch 055 | train 0.0143 | val 0.0571
+epoch 056 | train 0.0140 | val 0.0621
+epoch 057 | train 0.0142 | val 0.0614
+epoch 058 | train 0.0135 | val 0.0563
+epoch 059 | train 0.0142 | val 0.0581
+epoch 060 | train 0.0136 | val 0.0560
+epoch 061 | train 0.0137 | val 0.0601
+epoch 062 | train 0.0137 | val 0.0552
+epoch 063 | train 0.0137 | val 0.0580
+epoch 064 | train 0.0142 | val 0.0566
+epoch 065 | train 0.0135 | val 0.0580
+epoch 066 | train 0.0139 | val 0.0563
+epoch 067 | train 0.0142 | val 0.0590
+epoch 068 | train 0.0143 | val 0.0591
+epoch 069 | train 0.0143 | val 0.0638
+epoch 070 | train 0.0135 | val 0.0572
+epoch 071 | train 0.0138 | val 0.0585
+epoch 072 | train 0.0143 | val 0.0585
+epoch 073 | train 0.0144 | val 0.0584
+epoch 074 | train 0.0137 | val 0.0570
+epoch 075 | train 0.0145 | val 0.0620
+epoch 076 | train 0.0145 | val 0.0571
+epoch 077 | train 0.0142 | val 0.0587
+epoch 078 | train 0.0147 | val 0.0575
+epoch 079 | train 0.0141 | val 0.0573
+epoch 080 | train 0.0152 | val 0.0591
+epoch 081 | train 0.0135 | val 0.0649
+epoch 082 | train 0.0148 | val 0.0598
+epoch 083 | train 0.0144 | val 0.0563
+epoch 084 | train 0.0158 | val 0.0603
+epoch 085 | train 0.0145 | val 0.0589
+epoch 086 | train 0.0145 | val 0.0575
+epoch 087 | train 0.0157 | val 0.0599
+epoch 088 | train 0.0155 | val 0.0604
+epoch 089 | train 0.0148 | val 0.0579
+epoch 090 | train 0.0156 | val 0.0579
+epoch 091 | train 0.0165 | val 0.0588
+epoch 092 | train 0.0146 | val 0.0603
+epoch 093 | train 0.0160 | val 0.0676
+epoch 094 | train 0.0156 | val 0.0613
+epoch 095 | train 0.0147 | val 0.0603
+epoch 096 | train 0.0167 | val 0.0591
+epoch 097 | train 0.0154 | val 0.0596
+epoch 098 | train 0.0155 | val 0.0595
+epoch 099 | train 0.0155 | val 0.0629
+epoch 100 | train 0.0157 | val 0.0683
+epoch 101 | train 0.0167 | val 0.0583
+epoch 102 | train 0.0166 | val 0.0608
+epoch 103 | train 0.0152 | val 0.0599
+epoch 104 | train 0.0162 | val 0.0633
+epoch 105 | train 0.0158 | val 0.0611
+early stopping triggered.
+restored best model from epoch 5
+saved checkpoint to: /work/gg0303/g260244/metascales/wave-forecasts/codes/../models/2026_06_24_mslp_wind_transformer.pt
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 25865771
+* JobName          : pytorch-wave                                      
+* Account          : gg0303_gpu
+* User             : g260244 (202018), gg0303 (1190)                   
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l40360 (1)                                                
+* Submit date      : 2026-06-24T11:09:59
+* Start time       : 2026-06-24T11:10:02
+* End time         : 2026-06-24T11:59:13
+* Elapsed time     : 00:49:11 (Timelimit=12:00:00)                     
+* Command          : /work/gg0303/g260244/metascales/wave-forecasts/scripts/
+*                    train_transformer.sh
+* WorkDir          : /work/gg0303/g260244/metascales/wave-forecasts/scripts
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch              0.2
+* extern | extern             0.2                 856K (0)
+* ------------------------------------------------------------------------------
+

@@ -7,6 +7,11 @@ import matplotlib.dates as mdates
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import utils
 
+from matplotlib.offsetbox import AnchoredText
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from scipy.stats import spearmanr
+
+
 def detect_wave_storms(
     wave_data: pd.DataFrame,
     freq_hours: float = 1,
@@ -61,6 +66,7 @@ def detect_wave_storms(
 
     for event in storm_events:
         max_hs = event['hs'].max()
+        time_max_hs = event['hs'].idxmax()
         if max_hs >= threshold2:
             start_time = event.index[0]
             end_time = event.index[-1]
@@ -74,6 +80,7 @@ def detect_wave_storms(
                 'end_time': end_time,
                 'duration_hours': duration,
                 'max_hs': max_hs,
+                'time_max_hs': time_max_hs,
                 'mean_hs': mean_hs,
                 'mean_t0': mean_t0,
                 'mean_thq': mean_thq
@@ -87,7 +94,9 @@ def detect_wave_storms(
             if gap <= min_gap:
                 current['end_time'] = next_event['end_time']
                 current['duration_hours'] = (current['end_time'] - current['start_time']).total_seconds() / 3600
-                current['max_hs'] = max(current['max_hs'], next_event['max_hs'])
+                if next_event['max_hs'] > current['max_hs']:
+                    current['max_hs'] = next_event['max_hs']
+                    current['time_max_hs'] = next_event['time_max_hs']
                 current['mean_hs'] = (current['mean_hs'] + next_event['mean_hs']) / 2
                 if current['mean_t0'] is not None and next_event['mean_t0'] is not None:
                     current['mean_t0'] = (current['mean_t0'] + next_event['mean_t0']) / 2
@@ -141,7 +150,7 @@ def simple_windrose(ax, directions, n_dirs=16, facecolor='C0', edgecolor='k'):
     ax.set_xticklabels([])  # hide angle labels (for tiny insets)
     ax.set_ylim(0, freq.max() * 1.1 if freq.max() > 0 else 1)
 
-def plot_storm(data_obs, data_pred, date1, date2, ax=None, figsize=(4.2, 2.2), dpi=600, fig_num=""):
+def plot_storm(data_obs, data_pred, date1, date2, year, metrics_on=False, ax=None, figsize=(4.2, 2.2), dpi=600, fig_num=""):
     """Plot storm with Hs (left y-axis) and T0 (right y-axis)."""
 
     # ---- define centered 21-day window ----
@@ -187,6 +196,9 @@ def plot_storm(data_obs, data_pred, date1, date2, ax=None, figsize=(4.2, 2.2), d
     ax1.text(0.05, 0.95, fig_num, transform=ax1.transAxes,
          ha='left', va='top', color='grey') #, fontsize=5
 
+    ax1.text(0.5, 0.95, str(year),transform=ax1.transAxes,
+             ha='center', va='top',color='black', fontweight='bold')  # year of the event
+
     # ---- Right axis: T0 ----
     ax2 = ax1.twinx()
     ax2.spines['top'].set_visible(False)
@@ -207,6 +219,46 @@ def plot_storm(data_obs, data_pred, date1, date2, ax=None, figsize=(4.2, 2.2), d
     # ---- X-axis formatting ----
     ax1.xaxis.set_major_locator(mdates.DayLocator(interval=7))
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+    
+    if metrics_on:
+        # hs-metrics
+        mask = (hs_obs.index >= date1) & (hs_obs.index <= date2)
+        metrics_hs = (
+            # f"$\\bf{{Hs}}$\n"
+            f"RMSE: {root_mean_squared_error(hs_obs[mask], hs_pred[mask]):.2f} m\n"
+            f"Bias: {np.mean(hs_pred[mask] - hs_obs[mask]):.2f} m\n"
+            f"MAE: {mean_absolute_error(hs_obs[mask], hs_pred[mask]):.2f} m\n"
+            f"R²: {r2_score(hs_obs[mask], hs_pred[mask]):.2f}\n"
+            f"rₛ: {spearmanr(hs_obs[mask], hs_pred[mask])[0]:.2f}\n"
+            f"N: {len(hs_obs[mask])}"
+        )
+        
+        at_hs = AnchoredText(
+            metrics_hs,
+            loc='lower left',
+            prop=dict(size=5, color=utils.hereon_cp[2]),
+            frameon=False
+        )
+        ax1.add_artist(at_hs)
+    
+        #t0 matrix
+        metrics_t0 = (
+            # f"Tₘ₀₂\n"
+            f"RMSE: {root_mean_squared_error(t0_obs[mask], t0_pred[mask]):.2f} s\n"
+            f"Bias: {np.mean(t0_pred[mask] - t0_obs[mask]):.2f} s\n"
+            f"MAE: {mean_absolute_error(t0_obs[mask], t0_pred[mask]):.2f} s\n"
+            f"R²: {r2_score(t0_obs[mask], t0_pred[mask]):.2f}\n"
+            f"rₛ: {spearmanr(t0_obs[mask], t0_pred[mask])[0]:.2f}\n"
+            f"N: {len(t0_obs[mask])}"
+        )
+        
+        at_t0 = AnchoredText(
+            metrics_t0,
+            loc='lower right',
+            prop=dict(size=5, color=utils.hereon_cp[5]),
+            frameon=False
+        )
+        ax2.add_artist(at_t0)
 
     ticks = ax1.get_xticks()
     labels = [mdates.num2date(t).strftime('%b %d') for t in ticks]

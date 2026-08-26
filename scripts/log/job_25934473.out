@@ -1,0 +1,80 @@
+loading tensors from: /work/gg0303/g260244/metascales/wave-forecasts/codes/../data/prepared_tensors/wave_mslp_wind_tensors_SEE.pt
+tensor shapes:
+  X_mslp : torch.Size([666210, 6, 2400])
+  X_windU: torch.Size([666210, 6, 400])
+  X_windV: torch.Size([666210, 6, 400])
+  y      : torch.Size([666210, 4])
+using device: cuda
+inferred sequence length T = 6
+inferred feature dims: F1 (mslp) = 2400, F2 (u) = 400, F3 (v) = 400
+test period begins at: 2008-01-01 00:00:00
+test period ends   at: 2023-12-31 23:00:00
+
+hyperparameters loaded from transformer_hyperparams.txt:
+  d_model        = 64
+  nhead          = 8
+  num_layers     = 2
+  d_ff           = 256
+  dropout        = 0.1
+  l_rate         = 0.001
+  weight_decay   = 0.001
+  max_epochs     = 500
+  patience       = 15
+  patience_limit = 0.005
+epoch 001 | train 0.0920 | val 0.0662
+epoch 002 | train 0.0602 | val 0.0576
+epoch 003 | train 0.0535 | val 0.0580
+epoch 004 | train 0.0477 | val 0.0543
+epoch 005 | train 0.0445 | val 0.0543
+epoch 006 | train 0.0414 | val 0.0545
+epoch 007 | train 0.0374 | val 0.0522
+epoch 008 | train 0.0344 | val 0.0560
+epoch 009 | train 0.0324 | val 0.0548
+epoch 010 | train 0.0303 | val 0.0563
+epoch 011 | train 0.0282 | val 0.0570
+epoch 012 | train 0.0271 | val 0.0559
+epoch 013 | train 0.0254 | val 0.0562
+epoch 014 | train 0.0234 | val 0.0568
+epoch 015 | train 0.0239 | val 0.0597
+epoch 016 | train 0.0225 | val 0.0572
+epoch 017 | train 0.0213 | val 0.0596
+epoch 018 | train 0.0208 | val 0.0562
+epoch 019 | train 0.0207 | val 0.0569
+epoch 020 | train 0.0204 | val 0.0569
+epoch 021 | train 0.0202 | val 0.0565
+epoch 022 | train 0.0190 | val 0.0610
+early stopping triggered.
+restored best model from epoch 7
+saved checkpoint to: /work/gg0303/g260244/metascales/wave-forecasts/codes/../models/2026_06_29_mslp_wind_transformer_<class 'str'>.pt
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 25934473
+* JobName          : pytorch-wave                                      
+* Account          : gg0303_gpu
+* User             : g260244 (202018), gg0303 (1190)                   
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l40366 (1)                                                
+* Submit date      : 2026-06-28T09:07:18
+* Start time       : 2026-06-29T11:33:23
+* End time         : 2026-06-29T11:44:37
+* Elapsed time     : 00:11:14 (Timelimit=12:00:00)                     
+* Command          : /work/gg0303/g260244/metascales/wave-forecasts/scripts/
+*                    train_transformer.sh
+* WorkDir          : /work/gg0303/g260244/metascales/wave-forecasts/scripts
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch            0.047
+* extern | extern           0.047                 856K (0)
+* ------------------------------------------------------------------------------
+
