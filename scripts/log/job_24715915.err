@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/work/gg0303/g260244/metascales/wave-forecasts/codes/grid_search_transformer.py", line 324, in <module>
-    main()
-  File "/work/gg0303/g260244/metascales/wave-forecasts/codes/grid_search_transformer.py", line 265, in main
-    today = datetime.today().strftime("%Y_%m_%d")
-            ^^^^^^^^
-NameError: name 'datetime' is not defined. Did you forget to import 'datetime'?

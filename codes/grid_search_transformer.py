@@ -1,8 +1,9 @@
+#!/usr/bin/env python3
 # ---------------------------------------------------------------------------
 # grid search for the transformer encoder deep learning model
 # Salika Thilakarathne
 # Helmholtz-Zentrum Hereon
-# March, 2026
+# March 2026
 # ---------------------------------------------------------------------------
 
 
@@ -14,7 +15,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 
-from train_wave_transformer import AtmosWaveTransformer
+from train_atmoswave_transformer import AtmosWaveTransformer
 
 
 def load_tensors(tensor_ckpt_path: Path):

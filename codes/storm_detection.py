@@ -1,5 +1,11 @@
-#(c) Salika Thilakarathne, Hereon.
-#03 December, 2025
+#!/usr/bin/env python3
+# ---------------------------------------------------------------------------
+# wave storm identification: https://doi.org/10.1017/cft.2025.10012
+# Salika Thilakarathne
+# Helmholtz-Zentrum Hereon
+# March 2026
+# ---------------------------------------------------------------------------
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt

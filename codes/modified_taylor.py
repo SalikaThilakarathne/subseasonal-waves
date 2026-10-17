@@ -1,4 +1,11 @@
-"""Taylor Diagrams."""
+#!/usr/bin/env python3
+# ---------------------------------------------------------------------------
+# modified TD for the mansucript
+# Salika Thilakarathne
+# Helmholtz-Zentrum Hereon
+# March 2026
+# ---------------------------------------------------------------------------
+"""Taylor Diagrams -- modified from **"""
 
 import warnings
 import typing

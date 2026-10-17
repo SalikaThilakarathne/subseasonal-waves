@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
 # ---------------------------------------------------------------------------
-# a collection of small Python functions for the transformer encoder deep learning model
+# a collection of small Python functions for the deep learning model
 # Salika Thilakarathne
 # Helmholtz-Zentrum Hereon
-# March, 2026
+# March 2026
 # ---------------------------------------------------------------------------
-
 
 import pandas as pd
 import numpy as np
@@ -18,7 +18,7 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error, mean_s
 from shapely.geometry import LineString
 from shapely.geometry import Point #for shoreline detection
 from scipy.ndimage.filters import gaussian_filter1d
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 import scipy.stats as stats
 
 
@@ -158,8 +158,47 @@ def bin_wave_directions(wave_dir, bin_size=15):
 ############################################################
 ##### Utility Functions for differnt types of figures
 ############################################################
+def compute_metrics(y_obs, y_pred):
+    """Compute RMSE, bias, MAE, R², Spearman r, N."""
+    mask = np.isfinite(y_obs) & np.isfinite(y_pred)
+    y_true, y_hat = y_obs[mask], y_pred[mask]
 
+    rmse = root_mean_squared_error(y_true, y_hat)
+    bias = np.mean(y_hat - y_true)
+    mae = mean_absolute_error(y_true, y_hat)
+    r2 = r2_score(y_true, y_hat)
+    rs = spearmanr(y_true, y_hat)[0]
+    n = len(y_true)
 
+    return rmse, bias, mae, r2, rs, n
+
+def compute_skill_metrics_for_dfs(obs_df, pred_df):
+    """Return metrics for each column in obs_df and pred_df."""
+    cols = obs_df.columns.intersection(pred_df.columns)
+    out = {}
+
+    for col in cols:
+        # Align and drop missing data to prevent NaN propagation
+        valid_idx = obs_df[col].notna() & pred_df[col].notna()
+        
+        y_obs = obs_df.loc[valid_idx, col].values
+        y_pred = pred_df.loc[valid_idx, col].values
+        
+        # Guard clause: skip if no valid data points exist
+        if len(y_obs) == 0:
+            continue
+            
+        rmse, bias, mae, r2, rs, n = compute_metrics(y_obs, y_pred)
+        out[col] = {
+            "RMSE": rmse,
+            "Bias": bias,
+            "MAE": mae,
+            "R2": r2,
+            "Spearman": rs,
+            "NObs": int(n),
+        }
+
+    return pd.DataFrame(out).T
 
 def plot_predictions(y_true, y_pred, loc=4, 
                     scatter_color='white', edge_color=hereon_cp[0], marker_size=6,
