@@ -3,7 +3,7 @@
 # wave prediction with mslp + wind using a transformer encoder
 # Salika Thilakarathne
 # Helmholtz-Zentrum Hereon
-# repository: # https://gitlab.hzdr.de/...
+# repository: https://codebase.helmholtz.cloud/salika.thilakarathne/wave-forecasts
 # March 2026
 # ---------------------------------------------------------------------------
 

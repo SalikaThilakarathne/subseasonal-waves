@@ -186,12 +186,11 @@ def make_loader(
     seed: int,
 ) -> DataLoader:
     """Create a data loader from one date-defined subset."""
-    index_tensor = torch.from_numpy(indices).long()
+    start = int(indices[0])
+    stop = int(indices[-1]) + 1
     dataset = TensorDataset(
-        x_mslp.index_select(0, index_tensor),
-        x_wind_u.index_select(0, index_tensor),
-        x_wind_v.index_select(0, index_tensor),
-        y.index_select(0, index_tensor),
+        x_mslp[start:stop], x_wind_u[start:stop],
+        x_wind_v[start:stop], y[start:stop],
     )
 
     generator = torch.Generator()
@@ -241,7 +240,8 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     tensor_path = args.tensor_dir / (
-        f"wave_mslp_wind_tensors_{args.poi}_w{args.window:02d}.pt"
+        f"wave_mslp_wind_tensors_{args.poi}_"
+        f"w{args.window:02d}_trainval_1948_2007.pt"
     )
     if not tensor_path.is_file():
         raise FileNotFoundError(f"tensor file not found: {tensor_path}")
@@ -292,13 +292,15 @@ def main() -> None:
     validation_indices = np.flatnonzero(
         (dates >= TRAIN_END) & (dates < VALIDATION_END)
     )
-    test_indices = np.flatnonzero(dates >= VALIDATION_END)
-
-    if not len(train_indices) or not len(validation_indices) or not len(test_indices):
-        raise ValueError("an empty train, validation, or test period was found")
+    if not dates.is_monotonic_increasing:
+        raise ValueError("y_dates must be sorted")
+    if dates.max() >= VALIDATION_END:
+        raise ValueError("trainval tensor contains test data")
+    if not len(train_indices) or not len(validation_indices) or len(train_indices) + len(validation_indices) != len(dates):
+        raise ValueError("invalid train-validation split")
 
     # target statistics are calculated from the training period only
-    y_train = y.index_select(0, torch.from_numpy(train_indices).long())
+    y_train = y[:len(train_indices)]
     y_mean = y_train.mean(dim=0)
     y_std = y_train.std(dim=0)
     if torch.any(y_std == 0):
@@ -357,12 +359,14 @@ def main() -> None:
     print(f"  X_windU: {tuple(x_wind_u.shape)}", flush=True)
     print(f"  X_windV: {tuple(x_wind_v.shape)}", flush=True)
     print(f"  y      : {tuple(y.shape)}", flush=True)
-    print("date-based split:", flush=True)
-    print(f"  train      : {len(train_indices):,}", flush=True)
-    print(f"  validation : {len(validation_indices):,}", flush=True)
-    print(f"  test       : {len(test_indices):,}", flush=True)
+    print("date-based data split:", flush=True)
+    print(f"  train: {len(train_indices):,} samples, {dates[train_indices[0]]} to {dates[train_indices[-1]]}", flush=True)
+    print(f"  validation: {len(validation_indices):,} samples, {dates[validation_indices[0]]} to {dates[validation_indices[-1]]}", flush=True)
+    print("  test: excluded from the training tensor", flush=True)
     print(f"mlp input dimension: {input_dim:,}", flush=True)
-    print(f"trainable parameters: {sum(p.numel() for p in model.parameters()):,}", flush=True)
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"trainable parameters: {n_parameters:,}", flush=True)
+    print(f"parameters (million): {n_parameters / 1e6:.3f}", flush=True)
     print("hyperparameters:", flush=True)
     for key, value in hyperparameters.items():
         print(f"  {key:16s} = {value}", flush=True)

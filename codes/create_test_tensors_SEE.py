@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # ---------------------------------------------------------------------------
 # create test-period atmosphere-wave tensors for see
-# salika thilakarathne
-# helmholtz-zentrum hereon
-# october 2026
+# Salika Thilakarathne
+# Helmholtz-Zentrum Hereon
+# October 2026
 # ---------------------------------------------------------------------------
 
 """Create 6 h, 12 h, and 24 h tensors for the 2008-2023 test period.

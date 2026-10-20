@@ -192,48 +192,29 @@ def train_and_save_model(
     print(f"inferred sequence length T = {T}")
     print(f"inferred feature dims: F1 (mslp) = {F1}, F2 (u) = {F2}, F3 (v) = {F3}")
 
-    # compute test split
-    y_dates = pd.to_datetime(y_dates)
-    n_full_train = len(y_dates[y_dates<'2008-01-01 00:00:00'])  # define where you want the full train/test split want
-    n_train = len(y_dates[y_dates<'1997-01-01 00:00:00']) # define where you want the train/validation split want
- 
-    # get testing date stamps
-    test_dates = y_dates[n_full_train:]      # list of strings for test period
-    
-    print(f"test period begins at: {test_dates[0]}")
-    print(f"test period ends   at: {test_dates[-1]}")
-
-    # mslp splits
-    X_mslp_tr, X_mslp_va, X_mslp_te = (
-        X_mslp[:n_train],
-        X_mslp[n_train:n_full_train],
-        X_mslp[n_full_train:],
-    )
-
-    # wind u splits
-    X_windU_tr, X_windU_va, X_windU_te = (
-        X_windU[:n_train],
-        X_windU[n_train:n_full_train],
-        X_windU[n_full_train:],
-    )
-
-    # wind v splits
-    X_windV_tr, X_windV_va, X_windV_te = (
-        X_windV[:n_train],
-        X_windV[n_train:n_full_train],
-        X_windV[n_full_train:],
-    )
-
-    # target splits
-    y_tr, y_va, y_te = y[:n_train], y[n_train:n_full_train], y[n_full_train:]
-
-    # normalise target with train statistics only
+    # chronological train-validation split; test data are stored separately
+    y_dates = pd.DatetimeIndex(pd.to_datetime(y_dates))
+    train_mask = y_dates < pd.Timestamp("1997-01-01 00:00:00")
+    validation_mask = (y_dates >= pd.Timestamp("1997-01-01 00:00:00")) & (y_dates < pd.Timestamp("2008-01-01 00:00:00"))
+    if not y_dates.is_monotonic_increasing:
+        raise ValueError("y_dates must be sorted")
+    if y_dates.max() >= pd.Timestamp("2008-01-01 00:00:00"):
+        raise ValueError("trainval tensor contains test data")
+    n_train, n_validation = int(train_mask.sum()), int(validation_mask.sum())
+    if n_train == 0 or n_validation == 0 or n_train + n_validation != len(y_dates):
+        raise ValueError("invalid train-validation split")
+    print("date-based data split:", flush=True)
+    print(f"  train: {n_train:,} samples, {y_dates[train_mask][0]} to {y_dates[train_mask][-1]}", flush=True)
+    print(f"  validation: {n_validation:,} samples, {y_dates[validation_mask][0]} to {y_dates[validation_mask][-1]}", flush=True)
+    print("  test: excluded from the training tensor", flush=True)
+    X_mslp_tr, X_mslp_va = X_mslp[:n_train], X_mslp[n_train:]
+    X_windU_tr, X_windU_va = X_windU[:n_train], X_windU[n_train:]
+    X_windV_tr, X_windV_va = X_windV[:n_train], X_windV[n_train:]
+    y_tr, y_va = y[:n_train], y[n_train:]
     y_mean = y_tr.mean(dim=0, keepdim=True)
     y_std = y_tr.std(dim=0, keepdim=True).clamp_min(1e-6)
-
     y_tr = (y_tr - y_mean) / y_std
     y_va = (y_va - y_mean) / y_std
-    y_te = (y_te - y_mean) / y_std
 
     # dataloaders
     dl_train = DataLoader(
@@ -289,6 +270,9 @@ def train_and_save_model(
         dropout=dropout,
         output_dim=y.shape[1],
     ).to(device)
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"trainable parameters: {n_parameters:,}", flush=True)
+    print(f"parameters (million): {n_parameters / 1e6:.3f}", flush=True)
 
     criterion = nn.HuberLoss(delta=1.0)
     optimiser = torch.optim.AdamW(
@@ -475,7 +459,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     tensor_ckpt_path = args.tensor_dir / (
-        f"wave_mslp_wind_tensors_{args.poi}_w{args.window:02d}.pt"
+        f"wave_mslp_wind_tensors_{args.poi}_"
+        f"w{args.window:02d}_trainval_1948_2007.pt"
     )
 
     if not tensor_ckpt_path.is_file():
