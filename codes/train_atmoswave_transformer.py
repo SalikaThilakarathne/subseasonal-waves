@@ -219,12 +219,12 @@ def train_and_save_model(
     # dataloaders
     dl_train = DataLoader(
         TensorDataset(X_mslp_tr, X_windU_tr, X_windV_tr, y_tr),
-        batch_size=1024,
+        batch_size=1024,#1024
         shuffle=True,
     )
     dl_valid = DataLoader(
         TensorDataset(X_mslp_va, X_windU_va, X_windV_va, y_va),
-        batch_size=2048,
+        batch_size=2048,#2048
         shuffle=False,
     )
 

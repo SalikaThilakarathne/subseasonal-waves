@@ -684,3 +684,364 @@ class TaylorDiagram:
         elif bias > 0: m = '^'
         else: m = 'v'
         return s, m
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+
+def load_prediction_ensemble(
+    result_dir,
+    run_date,
+    model_name,
+    poi,
+    window,
+    seeds,
+):
+    """
+    Load predictions from multiple seeds and calculate ensemble statistics.
+
+    Parameters
+    ----------
+    result_dir : str or pathlib.Path
+        Directory containing the prediction parquet files.
+
+    run_date : str
+        Date prefix used in the prediction filenames, for example
+        "2026_10_20".
+
+    model_name : str
+        Model identifier used in the prediction filenames, for example
+        "atmoswaveCNNTransformer", "atmoswaveT", or "atmoswave_bMLP".
+
+    poi : str
+        Point-of-interest identifier, for example "SEE" or "ELB".
+
+    window : int
+        Atmospheric-memory length in hours: 6, 12, or 24.
+
+    seeds : sequence of int
+        Random seeds included in the ensemble, for example [41, 42, 43].
+
+    Returns
+    -------
+    data_obs : pandas.DataFrame
+        Observations with columns:
+        hs, t0, thq.
+
+    ensemble_prediction : pandas.DataFrame
+        Ensemble statistics with columns:
+        hs, hs_min, hs_max,
+        t0, t0_min, t0_max,
+        thq, thq_sin_mean, thq_cos_mean.
+
+    ensemble_members : dict of pandas.DataFrame
+        Individual seed predictions. Keys are:
+        hs, t0, thq_sin, thq_cos, thq.
+
+    Notes
+    -----
+    Hs and Tm02 ensemble means are arithmetic means.
+
+    Wave direction is calculated as a circular mean by averaging the
+    predicted sine and cosine components before reconstructing the angle.
+    An arithmetic mean of direction in degrees is not used.
+    """
+    result_dir = Path(result_dir)
+    seeds = list(seeds)
+
+    if not seeds:
+        raise ValueError(
+            "seeds must contain at least one random seed"
+        )
+
+    if window not in (6, 12, 24):
+        raise ValueError(
+            "window must be 6, 12, or 24 hours"
+        )
+
+    predictions_by_seed = {}
+    data_obs = None
+
+    required_columns = {
+        "hs_obs",
+        "t0_obs",
+        "thq_deg_obs",
+        "hs_pred",
+        "t0_pred",
+        "thq_sin_pred",
+        "thq_cos_pred",
+    }
+
+    for seed in seeds:
+        prediction_file = result_dir / (
+            f"{run_date}_{model_name}_predictions_"
+            f"{poi}_w{window:02d}_sd{seed:04d}.parquet"
+        )
+
+        if not prediction_file.is_file():
+            raise FileNotFoundError(
+                f"prediction file not found: {prediction_file}"
+            )
+
+        prediction = pd.read_parquet(
+            prediction_file
+        )
+
+        if not isinstance(
+            prediction.index,
+            pd.DatetimeIndex,
+        ):
+            prediction.index = pd.to_datetime(
+                prediction.index
+            )
+
+        prediction.sort_index(
+            inplace=True
+        )
+
+        missing_columns = required_columns.difference(
+            prediction.columns
+        )
+
+        if missing_columns:
+            raise KeyError(
+                f"{prediction_file.name} is missing columns: "
+                f"{sorted(missing_columns)}"
+            )
+
+        seed_observations = prediction.loc[
+            :,
+            [
+                "hs_obs",
+                "t0_obs",
+                "thq_deg_obs",
+            ],
+        ].rename(
+            columns={
+                "hs_obs": "hs",
+                "t0_obs": "t0",
+                "thq_deg_obs": "thq",
+            }
+        )
+
+        if data_obs is None:
+            data_obs = seed_observations
+        else:
+            common_obs_index = data_obs.index.intersection(
+                seed_observations.index
+            )
+
+            if common_obs_index.empty:
+                raise ValueError(
+                    "the seed files have no common observation timestamps"
+                )
+
+            # observations should be identical in every seed file
+            reference_values = data_obs.loc[
+                common_obs_index,
+                ["hs", "t0", "thq"],
+            ].to_numpy()
+
+            current_values = seed_observations.loc[
+                common_obs_index,
+                ["hs", "t0", "thq"],
+            ].to_numpy()
+
+            if not np.allclose(
+                reference_values,
+                current_values,
+                equal_nan=True,
+            ):
+                raise ValueError(
+                    f"observations differ in seed {seed}"
+                )
+
+        predictions_by_seed[seed] = prediction.loc[
+            :,
+            [
+                "hs_pred",
+                "t0_pred",
+                "thq_sin_pred",
+                "thq_cos_pred",
+            ],
+        ].rename(
+            columns={
+                "hs_pred": "hs",
+                "t0_pred": "t0",
+                "thq_sin_pred": "thq_sin",
+                "thq_cos_pred": "thq_cos",
+            }
+        )
+
+    # retain only timestamps shared by observations and every seed
+    common_index = data_obs.index
+
+    for prediction in predictions_by_seed.values():
+        common_index = common_index.intersection(
+            prediction.index
+        )
+
+    common_index = common_index.sort_values()
+
+    if common_index.empty:
+        raise ValueError(
+            "no timestamps are shared by all seed predictions"
+        )
+
+    data_obs = data_obs.loc[
+        common_index
+    ].copy()
+
+    # stack each variable as time x seed
+    hs_members = pd.concat(
+        {
+            seed: predictions_by_seed[seed].loc[
+                common_index,
+                "hs",
+            ]
+            for seed in seeds
+        },
+        axis=1,
+    )
+    hs_members.columns = [
+        f"seed_{seed}"
+        for seed in seeds
+    ]
+
+    t0_members = pd.concat(
+        {
+            seed: predictions_by_seed[seed].loc[
+                common_index,
+                "t0",
+            ]
+            for seed in seeds
+        },
+        axis=1,
+    )
+    t0_members.columns = [
+        f"seed_{seed}"
+        for seed in seeds
+    ]
+
+    thq_sin_members = pd.concat(
+        {
+            seed: predictions_by_seed[seed].loc[
+                common_index,
+                "thq_sin",
+            ]
+            for seed in seeds
+        },
+        axis=1,
+    )
+    thq_sin_members.columns = [
+        f"seed_{seed}"
+        for seed in seeds
+    ]
+
+    thq_cos_members = pd.concat(
+        {
+            seed: predictions_by_seed[seed].loc[
+                common_index,
+                "thq_cos",
+            ]
+            for seed in seeds
+        },
+        axis=1,
+    )
+    thq_cos_members.columns = [
+        f"seed_{seed}"
+        for seed in seeds
+    ]
+
+    # reconstruct each seed's direction for optional plotting
+    thq_members = np.degrees(
+        np.mod(
+            np.arctan2(
+                thq_sin_members,
+                thq_cos_members,
+            ),
+            2 * np.pi,
+        )
+    )
+
+    thq_members = pd.DataFrame(
+        thq_members,
+        index=common_index,
+        columns=thq_sin_members.columns,
+    )
+
+    ensemble_prediction = pd.DataFrame(
+        index=common_index
+    )
+
+    # arithmetic ensemble statistics for linear variables
+    ensemble_prediction["hs"] = hs_members.mean(
+        axis=1
+    )
+    ensemble_prediction["hs_min"] = hs_members.min(
+        axis=1
+    )
+    ensemble_prediction["hs_max"] = hs_members.max(
+        axis=1
+    )
+
+    ensemble_prediction["t0"] = t0_members.mean(
+        axis=1
+    )
+    ensemble_prediction["t0_min"] = t0_members.min(
+        axis=1
+    )
+    ensemble_prediction["t0_max"] = t0_members.max(
+        axis=1
+    )
+
+    # circular ensemble mean for wave direction
+    ensemble_prediction["thq_sin_mean"] = (
+        thq_sin_members.mean(axis=1)
+    )
+    ensemble_prediction["thq_cos_mean"] = (
+        thq_cos_members.mean(axis=1)
+    )
+
+    ensemble_prediction["thq"] = np.degrees(
+        np.mod(
+            np.arctan2(
+                ensemble_prediction["thq_sin_mean"],
+                ensemble_prediction["thq_cos_mean"],
+            ),
+            2 * np.pi,
+        )
+    )
+
+    # circular concentration and spread across seeds
+    resultant_length = np.sqrt(
+        ensemble_prediction["thq_sin_mean"] ** 2
+        + ensemble_prediction["thq_cos_mean"] ** 2
+    ).clip(
+        lower=np.finfo(float).eps,
+        upper=1.0,
+    )
+
+    ensemble_prediction["thq_circular_std"] = (
+        np.degrees(
+            np.sqrt(
+                -2.0 * np.log(resultant_length)
+            )
+        )
+    )
+
+    ensemble_members = {
+        "hs": hs_members,
+        "t0": t0_members,
+        "thq_sin": thq_sin_members,
+        "thq_cos": thq_cos_members,
+        "thq": thq_members,
+    }
+
+    return (
+        data_obs,
+        ensemble_prediction,
+        ensemble_members,
+    )

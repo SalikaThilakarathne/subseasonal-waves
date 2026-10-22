@@ -48,6 +48,12 @@ def arguments() -> tuple[argparse.Namespace, list[str]]:
         default=Path("../scripts/gpu_slurm_jobs"),
     )
     parser.add_argument("--sample-seconds", type=int, default=30)
+    parser.add_argument(
+        "--training-samples",
+        type=int,
+        default=None,
+        help="optional training sample count for throughput calculation",
+    )
     args, command = parser.parse_known_args()
 
     if command and command[0] == "--":
@@ -178,6 +184,115 @@ def directory_size_mib(path: Path) -> float:
         return path.stat().st_size / 1024**2
     return sum(item.stat().st_size for item in path.rglob("*") if item.is_file()) / 1024**2
 
+
+def parse_training_line(line: str, metadata: dict, epochs: list[dict]) -> None:
+    """Extract model and epoch information while preserving normal stdout."""
+    stripped = line.strip()
+
+    patterns = {
+        "trainable_parameters": r"trainable parameters\s*[:=]\s*([\d,]+)",
+        "parameters_million": r"parameters \(million\)\s*[:=]\s*([\d.]+)",
+        "train_batch_size": r"(?:train batch|train_batch)\s*[:=]\s*(\d+)",
+        "validation_batch_size": r"(?:validation batch|validation_batch)\s*[:=]\s*(\d+)",
+        "best_epoch": r"(?:restored best epoch|best epoch)\s*[:=]\s*(\d+)",
+        "training_samples": r"train:\s*([\d,]+)\s+samples",
+        "validation_samples": r"validation:\s*([\d,]+)\s+samples",
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            value = match.group(1).replace(",", "")
+            metadata[key] = float(value) if key == "parameters_million" else int(value)
+
+    epoch_match = re.search(
+        r"epoch\s+(\d+)\s*\|\s*train\s+([\d.eE+-]+)\s*\|\s*val\s+([\d.eE+-]+)"
+        r"(?:\s*\|\s*(?:time|epoch time)\s+([\d.]+)\s*s)?"
+        r"(?:\s*\|\s*(?:throughput)\s+([\d.]+)\s*(?:samples/s)?)?",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+
+    if epoch_match:
+        epoch = {
+            "epoch": int(epoch_match.group(1)),
+            "train_loss": float(epoch_match.group(2)),
+            "validation_loss": float(epoch_match.group(3)),
+        }
+        if epoch_match.group(4) is not None:
+            epoch["epoch_seconds"] = float(epoch_match.group(4))
+        if epoch_match.group(5) is not None:
+            epoch["throughput_samples_per_second"] = float(epoch_match.group(5))
+        epochs.append(epoch)
+
+
+def summarise_training(
+    metadata: dict,
+    epochs: list[dict],
+    elapsed_seconds: float,
+    supplied_training_samples: int | None,
+) -> dict:
+    """Create reviewer-ready training summaries from parsed stdout."""
+    n_epochs = len(epochs)
+    epoch_seconds = [
+        row["epoch_seconds"]
+        for row in epochs
+        if "epoch_seconds" in row
+    ]
+    throughputs = [
+        row["throughput_samples_per_second"]
+        for row in epochs
+        if "throughput_samples_per_second" in row
+    ]
+    training_samples = supplied_training_samples or metadata.get("training_samples")
+
+    # fallback timing includes loading, validation, checkpoint writing and monitoring
+    wall_clock_per_epoch = elapsed_seconds / n_epochs if n_epochs else None
+    fallback_throughput = (
+        training_samples / wall_clock_per_epoch
+        if training_samples and wall_clock_per_epoch
+        else None
+    )
+
+    return {
+        **metadata,
+        "epochs_completed": n_epochs,
+        "first_epoch": epochs[0]["epoch"] if epochs else None,
+        "last_epoch": epochs[-1]["epoch"] if epochs else None,
+        "mean_wall_clock_seconds_per_epoch": wall_clock_per_epoch,
+        "mean_logged_epoch_seconds": (
+            sum(epoch_seconds) / len(epoch_seconds)
+            if epoch_seconds
+            else None
+        ),
+        "median_logged_epoch_seconds": (
+            statistics.median(epoch_seconds)
+            if epoch_seconds
+            else None
+        ),
+        "mean_logged_throughput_samples_per_second": (
+            sum(throughputs) / len(throughputs)
+            if throughputs
+            else None
+        ),
+        "estimated_end_to_end_throughput_samples_per_second": fallback_throughput,
+        "best_validation_loss_observed": (
+            min(row["validation_loss"] for row in epochs)
+            if epochs
+            else None
+        ),
+        "best_validation_epoch_observed": (
+            min(epochs, key=lambda row: row["validation_loss"])["epoch"]
+            if epochs
+            else None
+        ),
+        "epoch_records": epochs,
+        "timing_note": (
+            "mean_wall_clock_seconds_per_epoch includes data loading, validation, "
+            "checkpoint writing and monitoring unless epoch_seconds is printed by trainer"
+        ),
+    }
+
 def main() -> None:
     """Run the requested command and write one json resource report."""
     args, command = arguments()
@@ -195,6 +310,8 @@ def main() -> None:
     start_time = datetime.now().astimezone()
     started = time.perf_counter()
     gpu_samples: list[dict] = []
+    training_metadata: dict = {}
+    epoch_records: list[dict] = []
     stop_event = threading.Event()
     monitor = threading.Thread(
         target=gpu_monitor,
@@ -209,11 +326,24 @@ def main() -> None:
         time_log = Path(file.name)
 
     try:
-        process = subprocess.run(
+        process = subprocess.Popen(
             [time_program, "-v", "-o", str(time_log), *command],
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
-        exit_code = process.returncode
+
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            parse_training_line(
+                line,
+                training_metadata,
+                epoch_records,
+            )
+
+        exit_code = process.wait()
     finally:
         stop_event.set()
         monitor.join(timeout=args.sample_seconds + 5)
@@ -222,6 +352,13 @@ def main() -> None:
     elapsed_seconds = time.perf_counter() - started
     host_resources = parse_time_log(time_log)
     time_log.unlink(missing_ok=True)
+
+    training_summary = summarise_training(
+        metadata=training_metadata,
+        epochs=epoch_records,
+        elapsed_seconds=elapsed_seconds,
+        supplied_training_samples=args.training_samples,
+    )
 
     models_written_mib = max(0.0, directory_size_mib(models_dir) - models_size_before)
     results_written_mib = max(0.0, directory_size_mib(results_dir) - results_size_before)
@@ -265,6 +402,7 @@ def main() -> None:
             "pytorch_version": torch.__version__,
             "cuda_version": torch.version.cuda,
         },
+        "training": training_summary,
         "host_resources": host_resources,
         "outputs": {
             "models_written_mib": round(models_written_mib, 3),

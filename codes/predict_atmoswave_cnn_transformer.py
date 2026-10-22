@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # ---------------------------------------------------------------------------
 # predict wave variables with the spatial cnn-temporal transformer
-# salika thilakarathne
-# helmholtz-zentrum hereon
-# october 2026
+# Salika Thilakarathne
+# Helmholtz-Zentrum Hereon
+# October 2026
 # ---------------------------------------------------------------------------
 
 """Predict the 2008-2023 test period using a trained CNN-Transformer.

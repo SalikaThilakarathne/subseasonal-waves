@@ -42,9 +42,17 @@ from sklearn.metrics import (
 
 file_pattern = re.compile(
     r"^(?P<date>\d{4}_\d{2}_\d{2})_"
-    r"(?P<model>atmoswaveT|atmoswave-transformer|atmoswave_bMLP)_predictions_"
-    r"(?P<poi>SEE|ELB)_w(?P<window>\d{2})_sd(?P<seed>\d{4})\.parquet$"
+    r"(?P<model>"
+    r"atmoswaveT|"
+    r"atmoswave-transformer|"
+    r"atmoswave_bMLP|"
+    r"atmoswaveCNNTransformer"
+    r")_predictions_"
+    r"(?P<poi>SEE|ELB)_"
+    r"w(?P<window>\d{2})_"
+    r"sd(?P<seed>\d{4})\.parquet$"
 )
+
 
 variables = {
     "hs": ("hs_obs", "hs_pred", "linear"),
@@ -112,10 +120,18 @@ def parse_filename(path: Path) -> dict:
     metadata = match.groupdict()
     model_name = metadata["model"]
 
-    if model_name in {"atmoswaveT", "atmoswave_transformer"}:
+    if model_name in {
+        "atmoswaveT",
+        "atmoswave-transformer",
+    }:
         metadata["model"] = "transformer"
+    
     elif model_name == "atmoswave_bMLP":
         metadata["model"] = "mlp"
+    
+    elif model_name == "atmoswaveCNNTransformer":
+        metadata["model"] = "cnn_transformer"
+
 
     metadata["window_hours"] = int(metadata.pop("window"))
     metadata["seed"] = int(metadata["seed"])

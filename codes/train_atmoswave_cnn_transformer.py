@@ -177,7 +177,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--wind_width", type=int, default=20)
     parser.add_argument("--base_channels", type=int, default=16)
     parser.add_argument("--pooled_size", type=int, default=2)
-    parser.add_argument("--batch_size", type=int, default=1024)  #was 256
+    parser.add_argument("--batch_size", type=int, default=256)  #was 256
     return parser.parse_args()
 
 
@@ -364,7 +364,7 @@ def main() -> None:
     )
     validation_loader = DataLoader(
         validation_dataset,
-        batch_size=1024,  #512
+        batch_size=512,  #512
         shuffle=False,
         pin_memory=torch.cuda.is_available(),
     )
@@ -376,7 +376,7 @@ def main() -> None:
     print(f"  base_channels    = {args.base_channels}", flush=True)
     print(f"  pooled_size      = {args.pooled_size}", flush=True)
     print(f"  train_batch      = {args.batch_size}", flush=True)
-    print("  validation_batch = 1024", flush=True)
+    print("  validation_batch = 512", flush=True)
     model = AtmosWaveCNNTransformer(
         sequence_length=sequence_length,
         mslp_shape=mslp_shape,

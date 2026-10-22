@@ -150,7 +150,7 @@ def load_hyperparameters(path: Path) -> dict:
         "dropout": 0.1,
         "l_rate": 0.001,
         "weight_decay": 0.001,
-        "batch_size": 1024,
+        "batch_size": 1024,#1024
         "max_epochs": 500,
         "patience": 50,
         "patience_limit": 0.0005,
@@ -324,7 +324,7 @@ def main() -> None:
         x_wind_v,
         y_normalised,
         validation_indices,
-        2048,
+        2048, #2048
         False,
         args.seed,
     )
