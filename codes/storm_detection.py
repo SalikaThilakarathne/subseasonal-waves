@@ -284,7 +284,7 @@ def plot_storm(data_obs, data_pred, date1, date2, year, metrics_on=False, ax=Non
 
 def plot_storm_ensemble(
     data_obs,
-    predictions,
+    data_pred,
     date1,
     date2,
     year,
@@ -297,55 +297,155 @@ def plot_storm_ensemble(
     """
     Plot observed and ensemble-predicted Hs and Tm02 for a storm event.
 
+    The ensemble mean is shown as a solid line. The minimum-to-maximum
+    range across model seeds is shown as a shaded band.
+
     Parameters
     ----------
     data_obs : pandas.DataFrame
-        Observations with columns 'hs' and 't0'.
+        Observed data with columns:
+        - hs
+        - t0
 
-    predictions : list of pandas.DataFrame
-        Predicted data from any number of model runs or seeds.
-        Each DataFrame must contain columns 'hs' and 't0'.
+    data_pred : pandas.DataFrame
+        Prepared ensemble prediction with columns:
+        - hs
+        - hs_min
+        - hs_max
+        - t0
+        - t0_min
+        - t0_max
 
     date1, date2 : str or pandas.Timestamp
-        Start and end of the highlighted storm period.
+        Start and end timestamps of the highlighted storm period.
 
-    year : int or str
-        Event year displayed in the panel.
+    year : str or int
+        Event year shown at the top of the panel.
 
     metrics_on : bool, default=False
-        If True, calculate metrics using the ensemble-mean prediction
-        during the highlighted storm period.
+        If True, calculate metrics over the highlighted storm period.
+        Metrics are calculated using the ensemble-mean predictions.
 
     ax : matplotlib.axes.Axes, optional
-        Existing axis for multi-panel figures.
+        Existing axis used for a multi-panel figure.
+
+    figsize : tuple, default=(4.2, 2.2)
+        Figure size when a new figure is created.
+
+    dpi : int, default=600
+        Figure resolution when a new figure is created.
+
+    fig_num : str, default=""
+        Panel label, for example "(a)".
 
     Returns
     -------
-    fig, ax1, ax2
-        Figure, Hs axis, and Tm02 axis.
+    fig : matplotlib.figure.Figure or None
+        Figure object. Returns None when an existing axis is supplied.
+
+    ax1 : matplotlib.axes.Axes
+        Left axis showing significant wave height.
+
+    ax2 : matplotlib.axes.Axes
+        Right axis showing mean wave period.
     """
-    if not predictions:
+    # validate the inputs
+    if data_obs is None or data_obs.empty:
         raise ValueError(
-            "predictions must contain at least one prediction DataFrame"
+            "data_obs must be a non-empty DataFrame"
         )
 
+    if data_pred is None or data_pred.empty:
+        raise ValueError(
+            "data_pred must be a non-empty DataFrame"
+        )
+
+    required_obs_columns = {
+        "hs",
+        "t0",
+    }
+
+    required_pred_columns = {
+        "hs",
+        "hs_min",
+        "hs_max",
+        "t0",
+        "t0_min",
+        "t0_max",
+    }
+
+    missing_obs = required_obs_columns.difference(
+        data_obs.columns
+    )
+
+    missing_pred = required_pred_columns.difference(
+        data_pred.columns
+    )
+
+    if missing_obs:
+        raise KeyError(
+            "data_obs is missing columns: "
+            f"{sorted(missing_obs)}"
+        )
+
+    if missing_pred:
+        raise KeyError(
+            "data_pred is missing columns: "
+            f"{sorted(missing_pred)}"
+        )
+
+    # copy the inputs so that their original indices are not modified
+    data_obs = data_obs.copy()
+    data_pred = data_pred.copy()
+
+    if not isinstance(
+        data_obs.index,
+        pd.DatetimeIndex,
+    ):
+        data_obs.index = pd.to_datetime(
+            data_obs.index
+        )
+
+    if not isinstance(
+        data_pred.index,
+        pd.DatetimeIndex,
+    ):
+        data_pred.index = pd.to_datetime(
+            data_pred.index
+        )
+
+    data_obs.sort_index(
+        inplace=True
+    )
+
+    data_pred.sort_index(
+        inplace=True
+    )
+
+    # define the highlighted event and centred 21-day plotting window
     date1 = pd.to_datetime(date1)
     date2 = pd.to_datetime(date2)
 
     if date2 < date1:
-        raise ValueError("date2 must be later than or equal to date1")
+        raise ValueError(
+            "date2 must be later than or equal to date1"
+        )
 
     midpoint = date1 + (date2 - date1) / 2
-    window_start = midpoint - pd.Timedelta(days=10.5)
-    window_end = midpoint + pd.Timedelta(days=10.5)
 
-    # retain the common timestamps across observations and all predictions
-    common_index = data_obs.index
+    window_start = midpoint - pd.Timedelta(
+        days=10.5
+    )
 
-    for prediction in predictions:
-        common_index = common_index.intersection(prediction.index)
+    window_end = midpoint + pd.Timedelta(
+        days=10.5
+    )
 
-    common_index = common_index.sort_values()
+    # retain timestamps shared by observations and predictions
+    common_index = data_obs.index.intersection(
+        data_pred.index
+    ).sort_values()
+
     common_index = common_index[
         (common_index >= window_start)
         & (common_index <= window_end)
@@ -353,50 +453,82 @@ def plot_storm_ensemble(
 
     if common_index.empty:
         raise ValueError(
-            "no common timestamps are available in the selected window"
+            "no common timestamps are available "
+            "within the selected 21-day window"
         )
 
-    # observations
-    hs_obs = data_obs.loc[common_index, "hs"]
-    t0_obs = data_obs.loc[common_index, "t0"]
+    # extract observations
+    hs_obs = data_obs.loc[
+        common_index,
+        "hs",
+    ].astype(float)
 
-    # stack predictions as time x ensemble member
-    hs_ensemble = pd.concat(
-        [
-            prediction.loc[common_index, "hs"].rename(
-                f"member_{member}"
-            )
-            for member, prediction in enumerate(predictions)
-        ],
+    t0_obs = data_obs.loc[
+        common_index,
+        "t0",
+    ].astype(float)
+
+    # extract ensemble means and seed ranges
+    hs_mean = data_pred.loc[
+        common_index,
+        "hs",
+    ].astype(float)
+
+    hs_min = data_pred.loc[
+        common_index,
+        "hs_min",
+    ].astype(float)
+
+    hs_max = data_pred.loc[
+        common_index,
+        "hs_max",
+    ].astype(float)
+
+    t0_mean = data_pred.loc[
+        common_index,
+        "t0",
+    ].astype(float)
+
+    t0_min = data_pred.loc[
+        common_index,
+        "t0_min",
+    ].astype(float)
+
+    t0_max = data_pred.loc[
+        common_index,
+        "t0_max",
+    ].astype(float)
+
+    # ensure the lower and upper bounds are correctly ordered
+    hs_lower = pd.concat(
+        [hs_min, hs_max],
         axis=1,
-    )
+    ).min(axis=1)
 
-    t0_ensemble = pd.concat(
-        [
-            prediction.loc[common_index, "t0"].rename(
-                f"member_{member}"
-            )
-            for member, prediction in enumerate(predictions)
-        ],
+    hs_upper = pd.concat(
+        [hs_min, hs_max],
         axis=1,
-    )
+    ).max(axis=1)
 
-    # ensemble statistics at each timestamp
-    hs_mean = hs_ensemble.mean(axis=1)
-    hs_min = hs_ensemble.min(axis=1)
-    hs_max = hs_ensemble.max(axis=1)
+    t0_lower = pd.concat(
+        [t0_min, t0_max],
+        axis=1,
+    ).min(axis=1)
 
-    t0_mean = t0_ensemble.mean(axis=1)
-    t0_min = t0_ensemble.min(axis=1)
-    t0_max = t0_ensemble.max(axis=1)
+    t0_upper = pd.concat(
+        [t0_min, t0_max],
+        axis=1,
+    ).max(axis=1)
 
+    # create a new figure or use the provided axis
     if ax is None:
         fig, ax1 = plt.subplots(
             figsize=figsize,
             dpi=dpi,
         )
     else:
-        fig, ax1 = None, ax
+        fig = None
+        ax1 = ax
 
     # highlight the storm period
     ax1.axvspan(
@@ -405,6 +537,7 @@ def plot_storm_ensemble(
         color=utils.hereon_cp[1],
         alpha=0.05,
         linewidth=0,
+        zorder=0,
     )
 
     # ------------------------------------------------------------------
@@ -412,38 +545,60 @@ def plot_storm_ensemble(
     # ------------------------------------------------------------------
     ax1.fill_between(
         common_index,
-        hs_min.to_numpy(),
-        hs_max.to_numpy(),
+        hs_lower.to_numpy(),
+        hs_upper.to_numpy(),
         color=utils.hereon_cp[2],
         alpha=0.20,
         linewidth=0,
         # label="H$_s$ seed range",
+        zorder=1,
     )
 
     ax1.plot(
-        hs_obs,
+        common_index,
+        hs_obs.to_numpy(),
         lw=0.4,
         color=utils.hereon_cp[2],
         linestyle="--",
         label="H$_s$ hcst",
+        zorder=3,
     )
 
     ax1.plot(
-        hs_mean,
+        common_index,
+        hs_mean.to_numpy(),
         lw=0.4,
         color=utils.hereon_cp[2],
         linestyle="-",
-        label="H$_s$ ens.",
+        label="H$_s$ mean",
+        zorder=4,
     )
 
-    ax1.spines["top"].set_visible(False)
+    ax1.spines["top"].set_visible(
+        False
+    )
+
     ax1.yaxis.tick_left()
     ax1.xaxis.tick_bottom()
     ax1.minorticks_off()
 
-    ax1.set_ylim(0, 10)
-    ax1.set_yticks([2, 4, 6, 8])
-    ax1.set_ylabel("H$_s$ [m]")
+    ax1.set_xlim(
+        window_start,
+        window_end,
+    )
+
+    ax1.set_ylim(
+        0,
+        10,
+    )
+
+    ax1.set_yticks(
+        [2, 4, 6, 8]
+    )
+
+    ax1.set_ylabel(
+        "H$_s$ [m]"
+    )
 
     ax1.yaxis.grid(
         True,
@@ -454,14 +609,17 @@ def plot_storm_ensemble(
     ax1.spines["left"].set_color(
         utils.hereon_cp[2]
     )
+
     ax1.tick_params(
         axis="y",
         colors=utils.hereon_cp[2],
     )
+
     ax1.yaxis.label.set_color(
         utils.hereon_cp[2]
     )
 
+    # panel label
     ax1.text(
         0.05,
         0.95,
@@ -472,6 +630,7 @@ def plot_storm_ensemble(
         color="grey",
     )
 
+    # event year
     ax1.text(
         0.5,
         0.95,
@@ -490,178 +649,282 @@ def plot_storm_ensemble(
 
     ax2.fill_between(
         common_index,
-        t0_min.to_numpy(),
-        t0_max.to_numpy(),
+        t0_lower.to_numpy(),
+        t0_upper.to_numpy(),
         color=utils.hereon_cp[5],
         alpha=0.20,
         linewidth=0,
         # label="T$_{m02}$ seed range",
+        zorder=1,
     )
 
     ax2.plot(
-        t0_obs,
+        common_index,
+        t0_obs.to_numpy(),
         lw=0.4,
         color=utils.hereon_cp[5],
         linestyle="--",
         label="T$_{m02}$ hcst",
+        zorder=3,
     )
 
     ax2.plot(
-        t0_mean,
-        lw=0.6,
+        common_index,
+        t0_mean.to_numpy(),
+        lw=0.4,
         color=utils.hereon_cp[5],
         linestyle="-",
-        label="T$_{m02}$ ens.",
+        label="T$_{m02}$ mean",
+        zorder=4,
     )
 
-    ax2.spines["top"].set_visible(False)
+    ax2.spines["top"].set_visible(
+        False
+    )
+
     ax2.yaxis.tick_right()
     ax2.minorticks_off()
 
-    ax2.set_ylim(0, 15)
-    ax2.set_yticks([3, 6, 9, 12])
-    ax2.set_ylabel("T$_{m02}$ [s]")
+    ax2.set_ylim(
+        0,
+        15,
+    )
+
+    ax2.set_yticks(
+        [3, 6, 9, 12]
+    )
+
+    ax2.set_ylabel(
+        "T$_{m02}$ [s]"
+    )
 
     ax2.tick_params(
         axis="y",
         colors=utils.hereon_cp[5],
     )
+
     ax2.yaxis.label.set_color(
         utils.hereon_cp[5]
     )
 
     # ------------------------------------------------------------------
-    # event metrics using the ensemble mean
+    # storm-period metrics calculated from the ensemble mean
     # ------------------------------------------------------------------
     if metrics_on:
-        event_mask = (
+        event_index = common_index[
             (common_index >= date1)
             & (common_index <= date2)
-        )
+        ]
 
-        hs_event_obs = hs_obs.loc[event_mask]
-        hs_event_pred = hs_mean.loc[event_mask]
+        if event_index.empty:
+            raise ValueError(
+                "the highlighted storm period contains "
+                "no common observation-prediction timestamps"
+            )
 
-        t0_event_obs = t0_obs.loc[event_mask]
-        t0_event_pred = t0_mean.loc[event_mask]
+        hs_event_obs = hs_obs.loc[
+            event_index
+        ]
 
+        hs_event_pred = hs_mean.loc[
+            event_index
+        ]
+
+        t0_event_obs = t0_obs.loc[
+            event_index
+        ]
+
+        t0_event_pred = t0_mean.loc[
+            event_index
+        ]
+
+        # remove missing values separately for each variable
         hs_valid = (
             hs_event_obs.notna()
             & hs_event_pred.notna()
         )
+
         t0_valid = (
             t0_event_obs.notna()
             & t0_event_pred.notna()
         )
 
+        n_hs = int(
+            hs_valid.sum()
+        )
+
+        n_t0 = int(
+            t0_valid.sum()
+        )
+
+        if n_hs < 2:
+            raise ValueError(
+                "fewer than two valid Hs values are available "
+                "for the storm-period metrics"
+            )
+
+        if n_t0 < 2:
+            raise ValueError(
+                "fewer than two valid Tm02 values are available "
+                "for the storm-period metrics"
+            )
+
+        hs_obs_valid = hs_event_obs[
+            hs_valid
+        ]
+
+        hs_pred_valid = hs_event_pred[
+            hs_valid
+        ]
+
+        t0_obs_valid = t0_event_obs[
+            t0_valid
+        ]
+
+        t0_pred_valid = t0_event_pred[
+            t0_valid
+        ]
+
+        hs_spearman = spearmanr(
+            hs_obs_valid,
+            hs_pred_valid,
+        ).statistic
+
+        t0_spearman = spearmanr(
+            t0_obs_valid,
+            t0_pred_valid,
+        ).statistic
+
         metrics_hs = (
             f"RMSE: "
             f"{root_mean_squared_error(
-                hs_event_obs[hs_valid],
-                hs_event_pred[hs_valid],
+                hs_obs_valid,
+                hs_pred_valid,
             ):.2f} m\n"
             f"Bias: "
             f"{np.mean(
-                hs_event_pred[hs_valid]
-                - hs_event_obs[hs_valid]
+                hs_pred_valid
+                - hs_obs_valid
             ):.2f} m\n"
             f"MAE: "
             f"{mean_absolute_error(
-                hs_event_obs[hs_valid],
-                hs_event_pred[hs_valid],
+                hs_obs_valid,
+                hs_pred_valid,
             ):.2f} m\n"
             f"R²: "
             f"{r2_score(
-                hs_event_obs[hs_valid],
-                hs_event_pred[hs_valid],
+                hs_obs_valid,
+                hs_pred_valid,
             ):.2f}\n"
-            f"rₛ: "
-            f"{spearmanr(
-                hs_event_obs[hs_valid],
-                hs_event_pred[hs_valid],
-            ).statistic:.2f}\n"
-            f"N: {hs_valid.sum()}"
+            f"rₛ: {hs_spearman:.2f}\n"
+            f"N: {n_hs}"
         )
 
-        at_hs = AnchoredText(
+        hs_metrics_box = AnchoredText(
             metrics_hs,
             loc="lower left",
-            prop=dict(
-                size=5,
-                color=utils.hereon_cp[2],
-            ),
+            prop={
+                "size": 5,
+                "color": utils.hereon_cp[2],
+            },
             frameon=False,
         )
-        ax1.add_artist(at_hs)
+
+        ax1.add_artist(
+            hs_metrics_box
+        )
 
         metrics_t0 = (
             f"RMSE: "
             f"{root_mean_squared_error(
-                t0_event_obs[t0_valid],
-                t0_event_pred[t0_valid],
+                t0_obs_valid,
+                t0_pred_valid,
             ):.2f} s\n"
             f"Bias: "
             f"{np.mean(
-                t0_event_pred[t0_valid]
-                - t0_event_obs[t0_valid]
+                t0_pred_valid
+                - t0_obs_valid
             ):.2f} s\n"
             f"MAE: "
             f"{mean_absolute_error(
-                t0_event_obs[t0_valid],
-                t0_event_pred[t0_valid],
+                t0_obs_valid,
+                t0_pred_valid,
             ):.2f} s\n"
             f"R²: "
             f"{r2_score(
-                t0_event_obs[t0_valid],
-                t0_event_pred[t0_valid],
+                t0_obs_valid,
+                t0_pred_valid,
             ):.2f}\n"
-            f"rₛ: "
-            f"{spearmanr(
-                t0_event_obs[t0_valid],
-                t0_event_pred[t0_valid],
-            ).statistic:.2f}\n"
-            f"N: {t0_valid.sum()}"
+            f"rₛ: {t0_spearman:.2f}\n"
+            f"N: {n_t0}"
         )
 
-        at_t0 = AnchoredText(
+        t0_metrics_box = AnchoredText(
             metrics_t0,
             loc="lower right",
-            prop=dict(
-                size=5,
-                color=utils.hereon_cp[5],
-            ),
+            prop={
+                "size": 5,
+                "color": utils.hereon_cp[5],
+            },
             frameon=False,
         )
-        ax2.add_artist(at_t0)
 
+        ax2.add_artist(
+            t0_metrics_box
+        )
+
+    # ------------------------------------------------------------------
     # x-axis formatting
-    ax1.set_xlim(window_start, window_end)
+    # ------------------------------------------------------------------
     ax1.xaxis.set_major_locator(
-        mdates.DayLocator(interval=7)
-    )
-    ax1.xaxis.set_major_formatter(
-        mdates.DateFormatter("%b %d")
+        mdates.DayLocator(
+            interval=7
+        )
     )
 
-    # add the year to the final visible date label
+    ax1.xaxis.set_major_formatter(
+        mdates.DateFormatter(
+            "%b %d"
+        )
+    )
+
+    # draw before retrieving final tick positions
+    if fig is not None:
+        fig.canvas.draw()
+    else:
+        ax1.figure.canvas.draw()
+
     ticks = ax1.get_xticks()
+
     labels = [
-        mdates.num2date(tick).strftime("%b %d")
+        mdates.num2date(
+            tick
+        ).strftime("%b %d")
         for tick in ticks
     ]
 
     if labels:
         labels[-1] = mdates.num2date(
             ticks[-1]
-        ).strftime("%b %d, %Y")
+        ).strftime(
+            "%b %d, %Y"
+        )
 
-        ax1.set_xticks(ticks)
-        ax1.set_xticklabels(labels)
+        ax1.set_xticks(
+            ticks
+        )
 
+        ax1.set_xticklabels(
+            labels
+        )
+
+    # ------------------------------------------------------------------
     # combined legend
+    # ------------------------------------------------------------------
     handles_1, labels_1 = (
         ax1.get_legend_handles_labels()
     )
+
     handles_2, labels_2 = (
         ax2.get_legend_handles_labels()
     )
