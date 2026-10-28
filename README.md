@@ -1,4 +1,4 @@
-# AtmosWave-Transformer
+# Wave-Emulator
 
 Python workflows for atmospheric predictor preprocessing, tensor generation, Transformer-based wave modelling, and evaluation.
 
