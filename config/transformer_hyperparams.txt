@@ -1,0 +1,10 @@
+d_model=64
+nhead=8
+num_layers=2
+d_ff=256
+dropout=0.1
+l_rate=0.001
+weight_decay=0.001
+max_epochs=5
+patience=50
+patience_limit=0.0005

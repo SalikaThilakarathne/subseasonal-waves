@@ -1,0 +1,5 @@
+python==3.13
+torch==2.5.1
+cuda==12.x
+gpu=nvidia a100-sxm4
+system=dkrz levante

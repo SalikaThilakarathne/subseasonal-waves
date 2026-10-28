@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+# ---------------------------------------------------------------------------
+# run a python workflow and save its resource use as json
+# Salika Thilakarathne
+# Helmholtz-Zentrum Hereon
+# October 2026
+# ---------------------------------------------------------------------------
+
+"""Run a command and save execution time, host ram, and gpu use as json.
+
+Example
+-------
+python -u run_with_resource_monitor.py \
+    --label mlp_SEE_w24_sd0042 \
+    --output-dir ../scripts/gpu_slurm_jobs \
+    -- python -u train_atmoswave_baselineMLP.py \
+       --poi SEE --window 24 --seed 42
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import re
+import shlex
+import shutil
+import socket
+import subprocess
+import tempfile
+import threading
+import statistics
+import time
+from datetime import datetime
+from pathlib import Path
+
+import torch
+
+
+def arguments() -> tuple[argparse.Namespace, list[str]]:
+    """Read monitoring settings and the command after --."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--label", required=True)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("../scripts/gpu_slurm_jobs"),
+    )
+    parser.add_argument("--sample-seconds", type=int, default=30)
+    parser.add_argument(
+        "--training-samples",
+        type=int,
+        default=None,
+        help="optional training sample count for throughput calculation",
+    )
+    args, command = parser.parse_known_args()
+
+    if command and command[0] == "--":
+        command = command[1:]
+
+    if not command:
+        parser.error("provide a command after --")
+
+    return args, command
+
+
+def gpu_monitor(samples: list[dict], stop: threading.Event, interval: int) -> None:
+    """Record allocated gpu status until the command finishes."""
+    query = (
+        "timestamp,index,name,memory.used,memory.total,"
+        "utilization.gpu,utilization.memory,power.draw,temperature.gpu,clocks.sm,clocks.mem"
+    )
+
+    while not stop.is_set():
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    f"--query-gpu={query}",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            for line in result.stdout.strip().splitlines():
+                values = [value.strip() for value in line.split(",")]
+
+                if len(values) != 11:
+                    continue
+
+                samples.append(
+                    {
+                        "timestamp": values[0],
+                        "index": int(values[1]),
+                        "name": values[2],
+                        "memory_used_mib": float(values[3]),
+                        "memory_total_mib": float(values[4]),
+                        "gpu_utilisation_percent": float(values[5]),
+                        "memory_utilisation_percent": float(values[6]),
+                        "power_w": float(values[7]),
+                        "temperature_c": float(values[8]),
+                        "sm_clock_mhz": float(values[9]),
+                        "memory_clock_mhz": float(values[10]),
+                    }
+                )
+        except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
+            pass
+
+        stop.wait(interval)
+
+
+def parse_time_log(path: Path) -> dict:
+    """Read the useful fields written by /usr/bin/time -v."""
+    if not path.is_file():
+        return {}
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    patterns = {
+        "user_seconds": r"User time \(seconds\):\s+([\d.]+)",
+        "system_seconds": r"System time \(seconds\):\s+([\d.]+)",
+        "cpu_percent": r"Percent of CPU this job got:\s+(.+)",
+        "wall_clock": r"Elapsed \(wall clock\) time.*:\s+(.+)",
+        "max_rss_kb": r"Maximum resident set size \(kbytes\):\s+(\d+)",
+        "file_inputs": r"File system inputs:\s+(\d+)",
+        "file_outputs": r"File system outputs:\s+(\d+)",
+        "major_page_faults": r"Major .* page faults:\s+(\d+)",
+        "minor_page_faults": r"Minor .* page faults:\s+(\d+)",
+        "voluntary_context_switches": r"Voluntary context switches:\s+(\d+)",
+        "involuntary_context_switches": r"Involuntary context switches:\s+(\d+)",
+        "exit_status": r"Exit status:\s+(\d+)",
+    }
+    output = {}
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+
+        if match is None:
+            continue
+
+        value = match.group(1).strip()
+
+        if key in {"user_seconds", "system_seconds"}:
+            value = float(value)
+        elif key not in {"cpu_percent", "wall_clock"}:
+            value = int(value)
+
+        output[key] = value
+
+    if "max_rss_kb" in output:
+        output["max_rss_gib"] = output["max_rss_kb"] / 1024**2
+
+    return output
+
+
+def mean(samples: list[dict], key: str):
+    values = [sample[key] for sample in samples]
+    return sum(values) / len(values) if values else None
+
+
+def maximum(samples: list[dict], key: str):
+    values = [sample[key] for sample in samples]
+    return max(values) if values else None
+
+
+
+def percentile(samples: list[dict], key: str, percent: float):
+    values = sorted(sample[key] for sample in samples)
+    if not values:
+        return None
+    position = (len(values) - 1) * percent / 100
+    lower = int(position)
+    upper = min(lower + 1, len(values) - 1)
+    fraction = position - lower
+    return values[lower] * (1 - fraction) + values[upper] * fraction
+
+
+def directory_size_mib(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    if path.is_file():
+        return path.stat().st_size / 1024**2
+    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file()) / 1024**2
+
+
+def parse_training_line(line: str, metadata: dict, epochs: list[dict]) -> None:
+    """Extract model and epoch information while preserving normal stdout."""
+    stripped = line.strip()
+
+    patterns = {
+        "trainable_parameters": r"trainable parameters\s*[:=]\s*([\d,]+)",
+        "parameters_million": r"parameters \(million\)\s*[:=]\s*([\d.]+)",
+        "train_batch_size": r"(?:train batch|train_batch)\s*[:=]\s*(\d+)",
+        "validation_batch_size": r"(?:validation batch|validation_batch)\s*[:=]\s*(\d+)",
+        "best_epoch": r"(?:restored best epoch|best epoch)\s*[:=]\s*(\d+)",
+        "training_samples": r"train:\s*([\d,]+)\s+samples",
+        "validation_samples": r"validation:\s*([\d,]+)\s+samples",
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            value = match.group(1).replace(",", "")
+            metadata[key] = float(value) if key == "parameters_million" else int(value)
+
+    epoch_match = re.search(
+        r"epoch\s+(\d+)\s*\|\s*train\s+([\d.eE+-]+)\s*\|\s*val\s+([\d.eE+-]+)"
+        r"(?:\s*\|\s*(?:time|epoch time)\s+([\d.]+)\s*s)?"
+        r"(?:\s*\|\s*(?:throughput)\s+([\d.]+)\s*(?:samples/s)?)?",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+
+    if epoch_match:
+        epoch = {
+            "epoch": int(epoch_match.group(1)),
+            "train_loss": float(epoch_match.group(2)),
+            "validation_loss": float(epoch_match.group(3)),
+        }
+        if epoch_match.group(4) is not None:
+            epoch["epoch_seconds"] = float(epoch_match.group(4))
+        if epoch_match.group(5) is not None:
+            epoch["throughput_samples_per_second"] = float(epoch_match.group(5))
+        epochs.append(epoch)
+
+
+def summarise_training(
+    metadata: dict,
+    epochs: list[dict],
+    elapsed_seconds: float,
+    supplied_training_samples: int | None,
+) -> dict:
+    """Create reviewer-ready training summaries from parsed stdout."""
+    n_epochs = len(epochs)
+    epoch_seconds = [
+        row["epoch_seconds"]
+        for row in epochs
+        if "epoch_seconds" in row
+    ]
+    throughputs = [
+        row["throughput_samples_per_second"]
+        for row in epochs
+        if "throughput_samples_per_second" in row
+    ]
+    training_samples = supplied_training_samples or metadata.get("training_samples")
+
+    # fallback timing includes loading, validation, checkpoint writing and monitoring
+    wall_clock_per_epoch = elapsed_seconds / n_epochs if n_epochs else None
+    fallback_throughput = (
+        training_samples / wall_clock_per_epoch
+        if training_samples and wall_clock_per_epoch
+        else None
+    )
+
+    return {
+        **metadata,
+        "epochs_completed": n_epochs,
+        "first_epoch": epochs[0]["epoch"] if epochs else None,
+        "last_epoch": epochs[-1]["epoch"] if epochs else None,
+        "mean_wall_clock_seconds_per_epoch": wall_clock_per_epoch,
+        "mean_logged_epoch_seconds": (
+            sum(epoch_seconds) / len(epoch_seconds)
+            if epoch_seconds
+            else None
+        ),
+        "median_logged_epoch_seconds": (
+            statistics.median(epoch_seconds)
+            if epoch_seconds
+            else None
+        ),
+        "mean_logged_throughput_samples_per_second": (
+            sum(throughputs) / len(throughputs)
+            if throughputs
+            else None
+        ),
+        "estimated_end_to_end_throughput_samples_per_second": fallback_throughput,
+        "best_validation_loss_observed": (
+            min(row["validation_loss"] for row in epochs)
+            if epochs
+            else None
+        ),
+        "best_validation_epoch_observed": (
+            min(epochs, key=lambda row: row["validation_loss"])["epoch"]
+            if epochs
+            else None
+        ),
+        "epoch_records": epochs,
+        "timing_note": (
+            "mean_wall_clock_seconds_per_epoch includes data loading, validation, "
+            "checkpoint writing and monitoring unless epoch_seconds is printed by trainer"
+        ),
+    }
+
+def main() -> None:
+    """Run the requested command and write one json resource report."""
+    args, command = arguments()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    job_id = os.getenv("SLURM_JOB_ID", "local")
+    output_path = args.output_dir / f"{args.label}_{job_id}.json"
+
+    working_directory = Path.cwd()
+    models_dir = (working_directory / "../models").resolve()
+    results_dir = (working_directory / "../results").resolve()
+    models_size_before = directory_size_mib(models_dir)
+    results_size_before = directory_size_mib(results_dir)
+
+    start_time = datetime.now().astimezone()
+    started = time.perf_counter()
+    gpu_samples: list[dict] = []
+    training_metadata: dict = {}
+    epoch_records: list[dict] = []
+    stop_event = threading.Event()
+    monitor = threading.Thread(
+        target=gpu_monitor,
+        args=(gpu_samples, stop_event, args.sample_seconds),
+        daemon=True,
+    )
+    monitor.start()
+
+    time_program = shutil.which("time") or "/usr/bin/time"
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as file:
+        time_log = Path(file.name)
+
+    try:
+        process = subprocess.Popen(
+            [time_program, "-v", "-o", str(time_log), *command],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            parse_training_line(
+                line,
+                training_metadata,
+                epoch_records,
+            )
+
+        exit_code = process.wait()
+    finally:
+        stop_event.set()
+        monitor.join(timeout=args.sample_seconds + 5)
+
+    end_time = datetime.now().astimezone()
+    elapsed_seconds = time.perf_counter() - started
+    host_resources = parse_time_log(time_log)
+    time_log.unlink(missing_ok=True)
+
+    training_summary = summarise_training(
+        metadata=training_metadata,
+        epochs=epoch_records,
+        elapsed_seconds=elapsed_seconds,
+        supplied_training_samples=args.training_samples,
+    )
+
+    models_written_mib = max(0.0, directory_size_mib(models_dir) - models_size_before)
+    results_written_mib = max(0.0, directory_size_mib(results_dir) - results_size_before)
+    mean_power = mean(gpu_samples, "power_w")
+    estimated_gpu_energy_wh = (
+        mean_power * elapsed_seconds / 3600
+        if mean_power is not None
+        else None
+    )
+
+    summary = {
+        "run": {
+            "label": args.label,
+            "command": shlex.join(command),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "exit_code": exit_code,
+            "status": "completed" if exit_code == 0 else "failed",
+        },
+        "slurm": {
+            "job_id": os.getenv("SLURM_JOB_ID"),
+            "array_job_id": os.getenv("SLURM_ARRAY_JOB_ID"),
+            "array_task_id": os.getenv("SLURM_ARRAY_TASK_ID"),
+            "job_name": os.getenv("SLURM_JOB_NAME"),
+            "partition": os.getenv("SLURM_JOB_PARTITION"),
+            "node_list": os.getenv("SLURM_JOB_NODELIST"),
+            "cpus_per_task": os.getenv("SLURM_CPUS_PER_TASK"),
+            "cpus_on_node": os.getenv("SLURM_CPUS_ON_NODE"),
+            "ntasks": os.getenv("SLURM_NTASKS"),
+            "allocated_gpus": os.getenv("SLURM_JOB_GPUS"),
+            "gpu_ids_visible": os.getenv("CUDA_VISIBLE_DEVICES"),
+            "requested_memory_mb": os.getenv("SLURM_MEM_PER_NODE"),
+        },
+        "system": {
+            "hostname": socket.gethostname(),
+            "working_directory": str(working_directory),
+            "cpu_model": platform.processor(),
+            "logical_cpu_count": os.cpu_count(),
+            "python_version": platform.python_version(),
+            "pytorch_version": torch.__version__,
+            "cuda_version": torch.version.cuda,
+        },
+        "training": training_summary,
+        "host_resources": host_resources,
+        "outputs": {
+            "models_written_mib": round(models_written_mib, 3),
+            "results_written_mib": round(results_written_mib, 3),
+        },
+        "gpu_resources": {
+            "sample_interval_seconds": args.sample_seconds,
+            "n_samples": len(gpu_samples),
+            "gpu_name": gpu_samples[0]["name"] if gpu_samples else None,
+            "gpu_memory_total_mib": (
+                gpu_samples[0]["memory_total_mib"] if gpu_samples else None
+            ),
+            "gpu_memory_peak_mib": maximum(gpu_samples, "memory_used_mib"),
+            "gpu_memory_mean_mib": mean(gpu_samples, "memory_used_mib"),
+            "gpu_memory_p95_mib": percentile(gpu_samples, "memory_used_mib", 95),
+            "gpu_memory_peak_percent": (
+                100 * maximum(gpu_samples, "memory_used_mib") / gpu_samples[0]["memory_total_mib"]
+                if gpu_samples else None
+            ),
+            "gpu_utilisation_mean_percent": mean(
+                gpu_samples, "gpu_utilisation_percent"
+            ),
+            "gpu_utilisation_peak_percent": maximum(
+                gpu_samples, "gpu_utilisation_percent"
+            ),
+            "gpu_utilisation_p50_percent": percentile(
+                gpu_samples, "gpu_utilisation_percent", 50
+            ),
+            "gpu_utilisation_p95_percent": percentile(
+                gpu_samples, "gpu_utilisation_percent", 95
+            ),
+            "power_mean_w": mean_power,
+            "power_peak_w": maximum(gpu_samples, "power_w"),
+            "estimated_gpu_energy_wh": estimated_gpu_energy_wh,
+            "sm_clock_mean_mhz": mean(gpu_samples, "sm_clock_mhz"),
+            "memory_clock_mean_mhz": mean(gpu_samples, "memory_clock_mhz"),
+            "temperature_peak_c": maximum(gpu_samples, "temperature_c"),
+        },
+    }
+
+    output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"resource summary saved: {output_path}", flush=True)
+    raise SystemExit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
